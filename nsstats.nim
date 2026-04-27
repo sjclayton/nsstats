@@ -131,7 +131,7 @@ proc main() =
 
     const labels = [
       "Total Queries", "Recursive Lookups", "Avg Recursive RTT", "Cached Responses",
-      "Cache Hit/Miss Rate", "Cache Population",
+      "Cache Hit/Miss Ratio", "Cache Population",
     ]
 
     var maxWidth = 0
