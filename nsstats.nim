@@ -78,7 +78,10 @@ proc main() =
     else:
       discard
 
+  const host = "192.168.1.10"
+  const port = "5380"
   const token = "a33e3882924ad719ca47db6ae18cabdb6dad5a4db75c602febb22eee50c0295b"
+
   let queryType = if isDay: "type=LastDay" else: ""
 
   let (startTime, endTime) =
@@ -88,10 +91,10 @@ proc main() =
       getLastHourRange()
 
   let statsEndpoint =
-    &"http://192.168.1.10:5380/api/dashboard/stats/get?{queryType}&token={token}"
-  let settingsEndpoint = &"http://192.168.1.10:5380/api/settings/get?token={token}"
+    &"http://{host}:{port}/api/dashboard/stats/get?{queryType}&token={token}"
+  let settingsEndpoint = &"http://{host}:{port}/api/settings/get?token={token}"
   let queryLogsEndpoint =
-    &"http://192.168.1.10:5380/api/logs/query?name=Query%20Logs%20(Sqlite)" &
+    &"http://{host}:{port}/api/logs/query?name=Query%20Logs%20(Sqlite)" &
     &"&classPath=QueryLogsSqlite.App&start={startTime}Z&end={endTime}Z" &
     &"&responseType=Recursive&entriesPerPage=10000&descendingOrder=true&token={token}"
 
