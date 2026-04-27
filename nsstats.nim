@@ -20,13 +20,13 @@ type
     status: string
     response: ConfigSettings
 
-  DnsLogEntry = object
+  QueryLogEntry = object
     timestamp: string
     responseType: string
     responseRtt: Option[float]
 
   QueryLogsData = object
-    entries: seq[DnsLogEntry]
+    entries: seq[QueryLogEntry]
 
   QueryLogsResponse = object
     status: string
@@ -151,8 +151,7 @@ proc main() =
 
     stdout.write align(labels[4], maxWidth), ": "
     let hitRateColor = colorRedToGreen(hitRate)
-    stdout.write hitRateColor, &"{hitRate:.1f}%\e[0m"
-    echo ""
+    stdout.write hitRateColor, &"{hitRate:.1f}%\e[0m\n"
 
     stdout.write align(labels[5], maxWidth), ": "
     let cachePopColor = colorGreenToRed(cachePopulation)
