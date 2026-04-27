@@ -123,13 +123,13 @@ proc main() =
         0.0
 
     let hitRate = calculatePercent(stats.totalCached, totalQueries)
-    let missRate = calculatePercent(stats.totalRecursive, totalQueries)
+    let missRate = 100.0 - hitRate
     let cachePopulation =
       calculatePercent(stats.cachedEntries, settings.cacheMaximumEntries)
 
     const labels = [
       "Total Queries", "Recursive Lookups", "Avg Recursive RTT", "Cached Responses",
-      "Cache Hit/Miss Ratio", "Cache Population",
+      "Cache Hit Rate", "Cache Population",
     ]
 
     var maxWidth = 0
@@ -137,7 +137,9 @@ proc main() =
       maxWidth = max(maxWidth, l.len + 1)
 
     echo align(labels[0], maxWidth), ": ", totalQueries
-    echo align(labels[1], maxWidth), ": ", stats.totalRecursive
+    stdout.write align(labels[1], maxWidth), ": ", stats.totalRecursive, " ("
+    let missRateColor = colorGreenToRed(missRate)
+    stdout.write missRateColor, &"{missRate:.1f}%\e[0m)\n"
 
     stdout.write align(labels[2], maxWidth), ": "
     if rttValues.len > 0:
@@ -149,10 +151,8 @@ proc main() =
     echo align(labels[3], maxWidth), ": ", stats.totalCached
 
     stdout.write align(labels[4], maxWidth), ": "
-    let missRateColor = colorGreenToRed(missRate)
     let hitRateColor = colorRedToGreen(hitRate)
-    stdout.write hitRateColor, &"{hitRate:.1f}%\e[0m / "
-    stdout.write missRateColor, &"{missRate:.1f}%\e[0m\n"
+    stdout.write hitRateColor, &"{hitRate:.1f}%\e[0m\n"
 
     stdout.write align(labels[5], maxWidth), ": "
     let cachePopColor = colorGreenToRed(cachePopulation)
