@@ -155,8 +155,8 @@ proc main() =
 
     stdout.write align(labels[4], maxWidth), ": "
     let cachePopColor = colorGreenToRed(cachePopulation)
-    stdout.write cachePopColor, &"{cachePopulation:.1f}%\e[0m"
-    echo &" ({stats.cachedEntries}/{settings.cacheMaximumEntries})"
+    stdout.write &"{stats.cachedEntries}/{settings.cacheMaximumEntries} ("
+    stdout.write cachePopColor, &"{cachePopulation:.1f}%\e[0m)\n"
   except CatchableError:
     echo "Error: ", getCurrentExceptionMsg()
   finally:
