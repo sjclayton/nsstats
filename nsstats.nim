@@ -21,8 +21,6 @@ type
     response: ConfigSettings
 
   QueryLogEntry = object
-    timestamp: string
-    responseType: string
     responseRtt: Option[float]
 
   QueryLogsData = object
