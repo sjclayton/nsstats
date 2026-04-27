@@ -100,12 +100,10 @@ proc main() =
   let statsEndpoint =
     &"http://192.168.1.10:5380/api/dashboard/stats/get?{queryType}token={token}"
   let settingsEndpoint = &"http://192.168.1.10:5380/api/settings/get?token={token}"
-
   let queryLogsEndpoint =
-    "http://192.168.1.10:5380/api/logs/query?" & "token=" & token & "&" &
-    "name=Query%20Logs%20(Sqlite)&" & "classPath=QueryLogsSqlite.App&" & "start=" &
-    startTime & "Z&end=" & endTime & "Z&" & "responseType=Recursive&" &
-    "entriesPerPage=10000&" & "descendingOrder=true"
+    &"http://192.168.1.10:5380/api/logs/query?token={token}&name=Query%20Logs%20(Sqlite)" &
+    &"&classPath=QueryLogsSqlite.App&start={startTime}Z&end={endTime}Z" &
+    "&responseType=Recursive&entriesPerPage=10000&descendingOrder=true"
 
   let client = newHttpClient()
 
