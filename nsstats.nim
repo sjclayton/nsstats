@@ -40,26 +40,18 @@ func calculatePercent(part: int, total: int): float =
 const greenRgb = (166, 227, 161)
 const redRgb = (243, 139, 168)
 
-func colorRtt(value: float, maxRtt: float = 100.0): string =
-  let capped = min(value, maxRtt)
-  let normalized = capped / maxRtt
+func colorGreenToRed(value: float, cap: float = 100.0): string =
+  let normalized = clamp(value / cap, 0.0, 1.0)
   let r = int(float(redRgb[0]) * normalized + float(greenRgb[0]) * (1.0 - normalized))
   let g = int(float(redRgb[1]) * normalized + float(greenRgb[1]) * (1.0 - normalized))
   let b = int(float(redRgb[2]) * normalized + float(greenRgb[2]) * (1.0 - normalized))
   return &"\e[38;2;{r};{g};{b}m"
 
-func colorCacheHits(value: float): string =
+func colorRedToGreen(value: float): string =
   let normalized = clamp(value / 100.0, 0.0, 1.0)
   let r = int(float(redRgb[0]) * (1.0 - normalized) + float(greenRgb[0]) * normalized)
   let g = int(float(redRgb[1]) * (1.0 - normalized) + float(greenRgb[1]) * normalized)
   let b = int(float(redRgb[2]) * (1.0 - normalized) + float(greenRgb[2]) * normalized)
-  return &"\e[38;2;{r};{g};{b}m"
-
-func colorCacheFill(value: float): string =
-  let normalized = clamp(value / 100.0, 0.0, 1.0)
-  let r = int(float(redRgb[0]) * normalized + float(greenRgb[0]) * (1.0 - normalized))
-  let g = int(float(redRgb[1]) * normalized + float(greenRgb[1]) * (1.0 - normalized))
-  let b = int(float(redRgb[2]) * normalized + float(greenRgb[2]) * (1.0 - normalized))
   return &"\e[38;2;{r};{g};{b}m"
 
 proc getLastHourRange(): (string, string) =
@@ -150,7 +142,7 @@ proc main() =
 
     stdout.write align(labels[2], maxWidth), ": "
     if rttValues.len > 0:
-      let color = colorRtt(avgRecursiveRtt, 100.0)
+      let color = colorGreenToRed(avgRecursiveRtt, 100.0)
       stdout.write color, &"{avgRecursiveRtt:.2f}ms\e[0m\n"
     else:
       echo "N/A"
@@ -158,12 +150,12 @@ proc main() =
     echo align(labels[3], maxWidth), ": ", stats.totalCached
 
     stdout.write align(labels[4], maxWidth), ": "
-    let hitRateColor = colorCacheHits(hitRate)
+    let hitRateColor = colorRedToGreen(hitRate)
     stdout.write hitRateColor, &"{hitRate:.1f}%\e[0m"
     echo ""
 
     stdout.write align(labels[5], maxWidth), ": "
-    let cachePopColor = colorCacheFill(cachePopulation)
+    let cachePopColor = colorGreenToRed(cachePopulation)
     stdout.write cachePopColor, &"{cachePopulation:.1f}%\e[0m"
     echo &" ({stats.cachedEntries}/{settings.cacheMaximumEntries})"
   except CatchableError:
