@@ -1,4 +1,5 @@
-import std/[httpclient, json, strutils, strformat, parseopt, times, options]
+import
+  std/[httpclient, json, strutils, strformat, parseopt, times, options, math, algorithm]
 
 type
   CacheStats = object
@@ -116,28 +117,40 @@ proc main() =
     let stats = statsResp.response.stats
     let settings = settingsResp.response
 
-    var totalRecursiveRtt = 0.0
     var rttValues: seq[float] = @[]
     for entry in queryLogsResp.response.entries:
       if entry.responseRtt.isSome():
-        let rtt = entry.responseRtt.get()
-        rttValues.add(rtt)
-        totalRecursiveRtt += rtt
+        rttValues.add(entry.responseRtt.get())
+
+    var medianRtt = 0.0
+    var stdDev = 0.0
+    if rttValues.len > 0:
+      rttValues.sort()
+      let mid = rttValues.len div 2
+      medianRtt =
+        if rttValues.len mod 2 != 0:
+          rttValues[mid]
+        else:
+          (rttValues[mid - 1] + rttValues[mid]) / 2.0
+
+      var sumRtt = 0.0
+      for v in rttValues:
+        sumRtt += v
+      let meanRtt = sumRtt / float(rttValues.len)
+
+      var sumSqDiff = 0.0
+      for v in rttValues:
+        sumSqDiff += pow(v - meanRtt, 2)
+      stdDev = sqrt(sumSqDiff / float(rttValues.len))
 
     let totalQueries = stats.totalCached + stats.totalRecursive
-    let avgRecursiveRtt =
-      if rttValues.len > 0:
-        totalRecursiveRtt / float(rttValues.len)
-      else:
-        0.0
-
     let hitRate = calculatePercent(stats.totalCached, totalQueries)
     let missRate = 100.0 - hitRate
     let cachePopulation =
       calculatePercent(stats.cachedEntries, settings.cacheMaximumEntries)
 
     const labels = [
-      "Total Queries", "Recursive Lookups", "Avg Recursive RTT", "Cached Responses",
+      "Total Queries", "Recursive Lookups", "Avg/Std Recursive RTT", "Cached Responses",
       "Cache Population",
     ]
 
@@ -146,7 +159,7 @@ proc main() =
       maxWidth = max(maxWidth, l.len + 2)
 
     let title = if isDay: "Daily DNS Statistics " else: "Hourly DNS Statistics"
-    let headerWidth = 42
+    let headerWidth = 47
     echo center(title, headerWidth)
     echo repeat("-", headerWidth)
 
@@ -158,8 +171,10 @@ proc main() =
 
     stdout.write align(labels[2], maxWidth), ": "
     if rttValues.len > 0:
-      let color = colorGreenToRed(avgRecursiveRtt, 100.0)
-      stdout.write color, &"{avgRecursiveRtt:.2f}ms\e[0m\n"
+      let avgColor = colorGreenToRed(medianRtt, 100.0)
+      let stdColor = colorGreenToRed(stdDev, 30.0)
+      stdout.write avgColor, &"{medianRtt:.2f}ms\e[0m / "
+      stdout.write stdColor, &"±{stdDev:.2f}ms\e[0m\n"
     else:
       echo "N/A"
 
