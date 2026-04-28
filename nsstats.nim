@@ -61,6 +61,7 @@ proc getLastHourRange(): (string, string) =
   let endTime = now.format("yyyy-MM-dd'T'HH:mm") & ":00"
   return (startTime, endTime)
 
+# FIXME: If hour is even endTime needs +15 min, if odd startTime needs -14min?
 proc getLastDayRange(): (string, string) =
   let oneDayAgo = now - 24.hours
   let startTime = oneDayAgo.format("yyyy-MM-dd'T'HH") & ":00:00"
