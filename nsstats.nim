@@ -1,5 +1,4 @@
-import
-  std/[httpclient, json, strutils, strformat, parseopt, times, options, math, algorithm]
+import std/[httpclient, json, strutils, strformat, parseopt, options, math, algorithm]
 
 type
   CacheStats = object
@@ -53,21 +52,6 @@ func colorRedToGreen(value: float): string =
   let b = int(float(redRgb[2]) * (1.0 - normalized) + float(greenRgb[2]) * normalized)
   return &"\e[38;2;{r};{g};{b}m"
 
-let now = getTime().utc
-
-proc getLastHourRange(): (string, string) =
-  let oneHourAgo = now - 1.hours
-  let startTime = oneHourAgo.format("yyyy-MM-dd'T'HH:mm") & ":00"
-  let endTime = now.format("yyyy-MM-dd'T'HH:mm") & ":00"
-  return (startTime, endTime)
-
-# FIXME: If hour is even endTime needs +15 min, if odd startTime needs -14min?
-proc getLastDayRange(): (string, string) =
-  let oneDayAgo = now - 24.hours
-  let startTime = oneDayAgo.format("yyyy-MM-dd'T'HH") & ":00:00"
-  let endTime = now.format("yyyy-MM-dd'T'HH") & ":00:00"
-  return (startTime, endTime)
-
 proc main() =
   var isDay = false
   var p = initOptParser()
@@ -88,34 +72,31 @@ proc main() =
   const host = "192.168.1.10"
   const port = "5380"
   const token = "a33e3882924ad719ca47db6ae18cabdb6dad5a4db75c602febb22eee50c0295b"
-  const entriesBuffer = "10000"
 
   let queryType = if isDay: "type=LastDay" else: ""
-
-  let (startTime, endTime) =
-    if isDay:
-      getLastDayRange()
-    else:
-      getLastHourRange()
 
   let statsEndpoint =
     &"http://{host}:{port}/api/dashboard/stats/get?{queryType}&token={token}"
   let settingsEndpoint = &"http://{host}:{port}/api/settings/get?token={token}"
-  let queryLogsEndpoint =
-    &"http://{host}:{port}/api/logs/query?name=Query%20Logs%20(Sqlite)" &
-    &"&classPath=QueryLogsSqlite.App&start={startTime}Z&end={endTime}Z" &
-    &"&responseType=Recursive&entriesPerPage={entriesBuffer}&descendingOrder=true&token={token}"
 
   let client = newHttpClient()
 
   try:
     let statsResp = parseJson(client.getContent(statsEndpoint)).to(StatsResponse)
+    let stats = statsResp.response.stats
+
+    let entriesBuffer = $(stats.totalRecursive + 1)
+
+    let queryLogsEndpoint =
+      &"http://{host}:{port}/api/logs/query?name=Query%20Logs%20(Sqlite)" &
+      &"&classPath=QueryLogsSqlite.App&responseType=Recursive" &
+      &"&entriesPerPage={entriesBuffer}&descendingOrder=true&token={token}"
+
     let settingsResp =
       parseJson(client.getContent(settingsEndpoint)).to(SettingsResponse)
     let queryLogsResp =
       parseJson(client.getContent(queryLogsEndpoint)).to(QueryLogsResponse)
 
-    let stats = statsResp.response.stats
     let settings = settingsResp.response
 
     var rttValues: seq[float] = @[]
