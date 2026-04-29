@@ -30,6 +30,12 @@ type
     status: string
     response: QueryLogsData
 
+  ResolverHealth = enum
+    rhUnknown
+    rhOptimal
+    rhFair
+    rhDegraded
+
 func calculatePercent(part: int, total: int): float =
   if total > 0:
     return (float(part) / float(total)) * 100.0
@@ -108,10 +114,11 @@ proc main() =
 
     var medianRtt = 0.0
     var meanRtt = 0.0
-    var stdDev = 0.0
-    var overallImpact = 0.0
+    var p99Rtt = 0.0
     var stabilityPenalty = 0.0
-    var stabilityStatus = "N/A"
+    var healthStatus = rhUnknown
+    var overallImpact = 0.0
+    var dnsScore = 0.0
 
     if rttValues.len > 0:
       rttValues.sort()
@@ -127,31 +134,39 @@ proc main() =
         sumRtt += v
       meanRtt = sumRtt / float(rttValues.len)
 
-      var sumSqDiff = 0.0
-      for v in rttValues:
-        sumSqDiff += pow(v - meanRtt, 2)
-      stdDev = sqrt(sumSqDiff / float(rttValues.len))
+      let p99Index = int(ceil(0.99 * float(rttValues.len))) - 1
+      p99Rtt = rttValues[clamp(p99Index, 0, rttValues.len - 1)]
+
+      stabilityPenalty = max(0.0, meanRtt - medianRtt)
+      healthStatus =
+        if stabilityPenalty < 10.0:
+          rhOptimal
+        elif stabilityPenalty < 50.0:
+          rhFair
+        else:
+          rhDegraded
 
       let recursiveWeight = float(stats.totalRecursive) / float(totalQueries)
-      stabilityPenalty = max(0.0, meanRtt - medianRtt)
       overallImpact = meanRtt * recursiveWeight
-
-      stabilityStatus =
-        if stabilityPenalty < 10.0:
-          "Optimal"
-        elif stabilityPenalty < 50.0:
-          "Fair"
-        else:
-          "Degraded"
 
     let hitRate = calculatePercent(stats.totalCached, totalQueries)
     let missRate = 100.0 - hitRate
     let cachePopulation =
       calculatePercent(stats.cachedEntries, settings.cacheMaximumEntries)
 
+    if rttValues.len > 0 and totalQueries > 0:
+      let impactScore = 100.0 - clamp((overallImpact / 10.0) * 100.0, 0.0, 100.0)
+      let cacheScore = hitRate
+      let tailPenalty = clamp((p99Rtt / 500.0) * 100.0, 0.0, 100.0)
+      let tailScore = 100.0 - tailPenalty
+
+      dnsScore = (impactScore * 0.60) + (cacheScore * 0.30) + (tailScore * 0.10)
+    else:
+      dnsScore = 0.0
+
     const labels = [
-      "Total Queries", "Recursive Lookups", "Med/Avg/Std RTT", "Resolver Health",
-      "Overall Impact", "Cached Responses", "Cache Population",
+      "Total Queries", "Recursive Lookups", "Med/Avg/99% RTT", "Resolver Health",
+      "Overall Impact", "Cached Responses", "Cache Population", "DNS Score",
     ]
 
     var maxWidth = 0
@@ -159,7 +174,7 @@ proc main() =
       maxWidth = max(maxWidth, l.len + 2)
 
     let title = if isDay: "Daily DNS Statistics " else: "Hourly DNS Statistics"
-    let headerWidth = 54
+    let headerWidth = 53
     echo center(title, headerWidth)
     echo repeat("-", headerWidth)
 
@@ -171,21 +186,35 @@ proc main() =
 
     stdout.write align(labels[2], maxWidth), ": "
     if rttValues.len > 0:
-      let delta = abs(meanRtt - medianRtt)
-
       let medColor = colorGreenToRed(medianRtt, 100.0)
-      let meanColor = colorGreenToRed(delta, 50.0)
-      let stdColor = colorGreenToRed(stdDev, 30.0)
+      let meanColor = colorGreenToRed(meanRtt, 100.0)
+      let p99Color = colorGreenToRed(p99Rtt, 300.0)
 
       stdout.write medColor, &"{medianRtt:.2f}ms\e[0m / "
       stdout.write meanColor, &"{meanRtt:.2f}ms\e[0m / "
-      stdout.write stdColor, &"±{stdDev:.2f}ms\e[0m\n"
+      stdout.write p99Color, &"{p99Rtt:.2f}ms\e[0m\n"
     else:
       echo "N/A"
 
+    let healthStr =
+      case healthStatus
+      of rhOptimal: "Optimal"
+      of rhFair: "Fair"
+      of rhDegraded: "Degraded"
+      of rhUnknown: "N/A"
+
     stdout.write align(labels[3], maxWidth), ": "
-    let penaltyColor = colorGreenToRed(stabilityPenalty, 50.0)
-    stdout.write penaltyColor, stabilityStatus, "\e[0m\n"
+    let healthColor =
+      case healthStatus
+      of rhOptimal:
+        "\e[38;2;166;227;161m" # green
+      of rhFair:
+        "\e[38;2;249;226;175m" # yellow
+      of rhDegraded:
+        "\e[38;2;243;139;168m" # red
+      of rhUnknown:
+        "\e[0m"
+    stdout.write healthColor, healthStr, "\e[0m\n"
 
     stdout.write align(labels[4], maxWidth), ": "
     let impactColor = colorGreenToRed(overallImpact, 10.0)
@@ -198,7 +227,14 @@ proc main() =
     stdout.write align(labels[6], maxWidth), ": "
     let cachePopColor = colorGreenToRed(cachePopulation)
     stdout.write &"{stats.cachedEntries}/{settings.cacheMaximumEntries} ("
-    stdout.write cachePopColor, &"{cachePopulation:.1f}%\e[0m)\n"
+    stdout.write cachePopColor, &"{cachePopulation:.1f}%\e[0m)\n\n"
+
+    stdout.write align(labels[7], maxWidth), ": "
+    if rttValues.len > 0 and totalQueries > 0:
+      let scoreColor = colorRedToGreen(dnsScore)
+      stdout.write scoreColor, &"{int(round(dnsScore))}/100\e[0m\n"
+    else:
+      echo "N/A"
   except CatchableError:
     echo "Error: ", getCurrentExceptionMsg()
   finally:
