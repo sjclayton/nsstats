@@ -104,8 +104,15 @@ proc main() =
       if entry.responseRtt.isSome():
         rttValues.add(entry.responseRtt.get())
 
+    let totalQueries = stats.totalCached + stats.totalRecursive
+
     var medianRtt = 0.0
+    var meanRtt = 0.0
     var stdDev = 0.0
+    var overallImpact = 0.0
+    var stabilityPenalty = 0.0
+    var stabilityStatus = "N/A"
+
     if rttValues.len > 0:
       rttValues.sort()
       let mid = rttValues.len div 2
@@ -118,22 +125,33 @@ proc main() =
       var sumRtt = 0.0
       for v in rttValues:
         sumRtt += v
-      let meanRtt = sumRtt / float(rttValues.len)
+      meanRtt = sumRtt / float(rttValues.len)
 
       var sumSqDiff = 0.0
       for v in rttValues:
         sumSqDiff += pow(v - meanRtt, 2)
       stdDev = sqrt(sumSqDiff / float(rttValues.len))
 
-    let totalQueries = stats.totalCached + stats.totalRecursive
+      let recursiveWeight = float(stats.totalRecursive) / float(totalQueries)
+      stabilityPenalty = max(0.0, meanRtt - medianRtt)
+      overallImpact = meanRtt * recursiveWeight
+
+      stabilityStatus =
+        if stabilityPenalty < 10.0:
+          "Optimal"
+        elif stabilityPenalty < 50.0:
+          "Fair"
+        else:
+          "Degraded"
+
     let hitRate = calculatePercent(stats.totalCached, totalQueries)
     let missRate = 100.0 - hitRate
     let cachePopulation =
       calculatePercent(stats.cachedEntries, settings.cacheMaximumEntries)
 
     const labels = [
-      "Total Queries", "Recursive Lookups", "Avg/Std Recursive RTT", "Cached Responses",
-      "Cache Population",
+      "Total Queries", "Recursive Lookups", "Med/Avg/Std RTT", "Resolver Health",
+      "Overall Impact", "Cached Responses", "Cache Population",
     ]
 
     var maxWidth = 0
@@ -141,7 +159,7 @@ proc main() =
       maxWidth = max(maxWidth, l.len + 2)
 
     let title = if isDay: "Daily DNS Statistics " else: "Hourly DNS Statistics"
-    let headerWidth = 47
+    let headerWidth = 54
     echo center(title, headerWidth)
     echo repeat("-", headerWidth)
 
@@ -153,18 +171,31 @@ proc main() =
 
     stdout.write align(labels[2], maxWidth), ": "
     if rttValues.len > 0:
-      let avgColor = colorGreenToRed(medianRtt, 100.0)
+      let delta = abs(meanRtt - medianRtt)
+
+      let medColor = colorGreenToRed(medianRtt, 100.0)
+      let meanColor = colorGreenToRed(delta, 50.0)
       let stdColor = colorGreenToRed(stdDev, 30.0)
-      stdout.write avgColor, &"{medianRtt:.2f}ms\e[0m / "
+
+      stdout.write medColor, &"{medianRtt:.2f}ms\e[0m / "
+      stdout.write meanColor, &"{meanRtt:.2f}ms\e[0m / "
       stdout.write stdColor, &"±{stdDev:.2f}ms\e[0m\n"
     else:
       echo "N/A"
 
-    stdout.write align(labels[3], maxWidth), ": ", stats.totalCached, " ("
+    stdout.write align(labels[3], maxWidth), ": "
+    let penaltyColor = colorGreenToRed(stabilityPenalty, 50.0)
+    stdout.write penaltyColor, stabilityStatus, "\e[0m\n"
+
+    stdout.write align(labels[4], maxWidth), ": "
+    let impactColor = colorGreenToRed(overallImpact, 10.0)
+    stdout.write impactColor, &"{overallImpact:.2f}ms\e[0m (avg delay/query)\n"
+
+    stdout.write align(labels[5], maxWidth), ": ", stats.totalCached, " ("
     let hitRateColor = colorRedToGreen(hitRate)
     stdout.write hitRateColor, &"{hitRate:.1f}%\e[0m)\n"
 
-    stdout.write align(labels[4], maxWidth), ": "
+    stdout.write align(labels[6], maxWidth), ": "
     let cachePopColor = colorGreenToRed(cachePopulation)
     stdout.write &"{stats.cachedEntries}/{settings.cacheMaximumEntries} ("
     stdout.write cachePopColor, &"{cachePopulation:.1f}%\e[0m)\n"
