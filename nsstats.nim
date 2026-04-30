@@ -2,15 +2,15 @@ import
   std/[httpclient, json, strutils, strformat, parseopt, options, times, math, algorithm]
 
 type
-  CacheStats = object
+  Stats = object
     totalRecursive: int
     totalCached: int
     cachedEntries: int
 
   StatsWrapper = object
-    stats: CacheStats
+    stats: Stats
 
-  ConfigSettings = object
+  Settings = object
     cacheMaximumEntries: int
 
   QueryLogEntry = object
@@ -170,9 +170,8 @@ proc main() =
   try:
     let stats =
       fetchApi[ApiResponse[StatsWrapper]](client, statsEndpoint, "stats").response.stats
-    let settings = fetchApi[ApiResponse[ConfigSettings]](
-      client, settingsEndpoint, "settings"
-    ).response
+    let settings =
+      fetchApi[ApiResponse[Settings]](client, settingsEndpoint, "settings").response
 
     let now = getTime().utc
     var endTime = ""
