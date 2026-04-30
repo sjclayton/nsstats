@@ -10,18 +10,8 @@ type
   StatsWrapper = object
     stats: CacheStats
 
-  StatsResponse = object
-    status: string
-    response: StatsWrapper
-    errorMessage: Option[string]
-
   ConfigSettings = object
     cacheMaximumEntries: int
-
-  SettingsResponse = object
-    status: string
-    response: ConfigSettings
-    errorMessage: Option[string]
 
   QueryLogEntry = object
     responseRtt: Option[float]
@@ -29,10 +19,10 @@ type
   QueryLogsData = object
     entries: seq[QueryLogEntry]
 
-  QueryLogsResponse = object
+  ApiResponse*[T] = object
     status: string
-    response: QueryLogsData
     errorMessage: Option[string]
+    response: T
 
   ResolverHealth = enum
     rhUnknown
@@ -40,27 +30,48 @@ type
     rhFair
     rhDegraded
 
+  ColorDirection = enum
+    cdGreenRed
+    cdRedGreen
+
 func calculatePercent(part: int, total: int): float =
   if total > 0:
     return (float(part) / float(total)) * 100.0
   return 0.0
 
 const greenRgb = (166, 227, 161)
+const yellowRgb = (249, 226, 175)
 const redRgb = (243, 139, 168)
 
-func colorGreenToRed(value: float, cap: float = 100.0): string =
-  let normalized = clamp(value / cap, 0.0, 1.0)
-  let r = int(float(redRgb[0]) * normalized + float(greenRgb[0]) * (1.0 - normalized))
-  let g = int(float(redRgb[1]) * normalized + float(greenRgb[1]) * (1.0 - normalized))
-  let b = int(float(redRgb[2]) * normalized + float(greenRgb[2]) * (1.0 - normalized))
+func colorize(
+    value: float, cap: float = 100.0, direction: ColorDirection = cdGreenRed
+): string =
+  let (fromRgb, toRgb, effectiveCap) =
+    case direction
+    of cdGreenRed:
+      (greenRgb, redRgb, cap)
+    of cdRedGreen:
+      (redRgb, greenRgb, 100.0)
+
+  let normalized = clamp(value / effectiveCap, 0.0, 1.0)
+  let r = int(float(toRgb[0]) * normalized + float(fromRgb[0]) * (1.0 - normalized))
+  let g = int(float(toRgb[1]) * normalized + float(fromRgb[1]) * (1.0 - normalized))
+  let b = int(float(toRgb[2]) * normalized + float(fromRgb[2]) * (1.0 - normalized))
   return &"\e[38;2;{r};{g};{b}m"
 
-func colorRedToGreen(value: float): string =
-  let normalized = clamp(value / 100.0, 0.0, 1.0)
-  let r = int(float(redRgb[0]) * (1.0 - normalized) + float(greenRgb[0]) * normalized)
-  let g = int(float(redRgb[1]) * (1.0 - normalized) + float(greenRgb[1]) * normalized)
-  let b = int(float(redRgb[2]) * (1.0 - normalized) + float(greenRgb[2]) * normalized)
-  return &"\e[38;2;{r};{g};{b}m"
+func colorize(value: float, direction: ColorDirection): string =
+  colorize(value, 100.0, direction)
+
+func getHealthInfo(status: ResolverHealth): (string, string) =
+  case status
+  of rhOptimal:
+    ("Optimal", &"\e[38;2;{greenRgb[0]};{greenRgb[1]};{greenRgb[2]}m")
+  of rhFair:
+    ("Fair", &"\e[38;2;{yellowRgb[0]};{yellowRgb[1]};{yellowRgb[2]}m")
+  of rhDegraded:
+    ("Degraded", &"\e[38;2;{redRgb[0]};{redRgb[1]};{redRgb[2]}m")
+  of rhUnknown:
+    ("N/A", "\e[0m")
 
 proc validateApiResponse(
     respStatus: string, respError: Option[string], apiName: string
@@ -144,22 +155,24 @@ proc main() =
 
   let queryType =
     if isDaily:
-      "type=LastDay"
+      "type=LastDay&"
     elif isWeekly:
-      "type=LastWeek"
+      "type=LastWeek&"
     else:
       ""
 
   let statsEndpoint =
-    &"http://{host}:{port}/api/dashboard/stats/get?{queryType}&token={token}"
+    &"http://{host}:{port}/api/dashboard/stats/get?{queryType}token={token}"
   let settingsEndpoint = &"http://{host}:{port}/api/settings/get?token={token}"
 
   let client = newHttpClient()
 
   try:
-    let stats = fetchApi[StatsResponse](client, statsEndpoint, "stats").response.stats
-    let settings =
-      fetchApi[SettingsResponse](client, settingsEndpoint, "settings").response
+    let stats =
+      fetchApi[ApiResponse[StatsWrapper]](client, statsEndpoint, "stats").response.stats
+    let settings = fetchApi[ApiResponse[ConfigSettings]](
+      client, settingsEndpoint, "settings"
+    ).response
 
     let now = getTime().utc
     var endTime = ""
@@ -177,7 +190,8 @@ proc main() =
       &"&classPath=QueryLogsSqlite.App&responseType=Recursive&end={endTime}" &
       &"&entriesPerPage={entriesBuffer}&descendingOrder=true&token={token}"
 
-    let logs = fetchApi[QueryLogsResponse](client, queryLogsEndpoint, "logs").response
+    let logs =
+      fetchApi[ApiResponse[QueryLogsData]](client, queryLogsEndpoint, "logs").response
 
     var rttValues: seq[float] = @[]
     for entry in logs.entries:
@@ -185,6 +199,9 @@ proc main() =
         rttValues.add(entry.responseRtt.get())
 
     let totalQueries = stats.totalCached + stats.totalRecursive
+
+    let hasRtts = rttValues.len > 0
+    let hasQueries = totalQueries > 0
 
     var medianRtt = 0.0
     var meanRtt = 0.0
@@ -194,7 +211,7 @@ proc main() =
     var overallImpact = 0.0
     var dnsScore = 0.0
 
-    if rttValues.len > 0:
+    if hasRtts:
       rttValues.sort()
       let mid = rttValues.len div 2
       medianRtt =
@@ -228,7 +245,7 @@ proc main() =
     let cachePopulation =
       calculatePercent(stats.cachedEntries, settings.cacheMaximumEntries)
 
-    if rttValues.len > 0 and totalQueries > 0:
+    if hasRtts and hasQueries:
       let impactScore = 100.0 - clamp((overallImpact / 10.0) * 100.0, 0.0, 100.0)
       let cacheScore = hitRate
       let tailPenalty = clamp((p99Rtt / 500.0) * 100.0, 0.0, 100.0)
@@ -261,14 +278,14 @@ proc main() =
     echo align(labels[0], maxWidth), ": ", totalQueries
 
     stdout.write align(labels[1], maxWidth), ": ", stats.totalRecursive, " ("
-    let missRateColor = colorGreenToRed(missRate)
+    let missRateColor = colorize(missRate)
     stdout.write missRateColor, &"{missRate:.1f}%\e[0m)\n"
 
     stdout.write align(labels[2], maxWidth), ": "
-    if rttValues.len > 0:
-      let medColor = colorGreenToRed(medianRtt, 100.0)
-      let meanColor = colorGreenToRed(meanRtt, 100.0)
-      let p99Color = colorGreenToRed(p99Rtt, 300.0)
+    if hasRtts:
+      let medColor = colorize(medianRtt, 100.0)
+      let meanColor = colorize(meanRtt, 100.0)
+      let p99Color = colorize(p99Rtt, 300.0)
 
       stdout.write medColor, &"{medianRtt:.2f}ms\e[0m / "
       stdout.write meanColor, &"{meanRtt:.2f}ms\e[0m / "
@@ -276,45 +293,26 @@ proc main() =
     else:
       echo "N/A"
 
-    let healthStr =
-      case healthStatus
-      of rhOptimal: "Optimal"
-      of rhFair: "Fair"
-      of rhDegraded: "Degraded"
-      of rhUnknown: "N/A"
-
     stdout.write align(labels[3], maxWidth), ": "
-    let healthColor =
-      case healthStatus
-      of rhOptimal:
-        "\e[38;2;166;227;161m" # green
-      of rhFair:
-        "\e[38;2;249;226;175m" # yellow
-      of rhDegraded:
-        "\e[38;2;243;139;168m" # red
-      of rhUnknown:
-        "\e[0m"
-    stdout.write healthColor, healthStr, "\e[0m\n"
+    let (healthLabel, healthColor) = getHealthInfo(healthStatus)
+    stdout.write healthColor, healthLabel, "\e[0m\n"
 
     stdout.write align(labels[4], maxWidth), ": "
-    let impactColor = colorGreenToRed(overallImpact, 10.0)
+    let impactColor = colorize(overallImpact, 10.0)
     stdout.write impactColor, &"{overallImpact:.2f}ms\e[0m (avg delay/query)\n"
 
     stdout.write align(labels[5], maxWidth), ": ", stats.totalCached, " ("
-    let hitRateColor = colorRedToGreen(hitRate)
+    let hitRateColor = colorize(hitRate, cdRedGreen)
     stdout.write hitRateColor, &"{hitRate:.1f}%\e[0m)\n"
 
     stdout.write align(labels[6], maxWidth), ": "
-    let cachePopColor = colorGreenToRed(cachePopulation)
+    let cachePopColor = colorize(cachePopulation)
     stdout.write &"{stats.cachedEntries}/{settings.cacheMaximumEntries} ("
     stdout.write cachePopColor, &"{cachePopulation:.1f}%\e[0m)\n\n"
 
     stdout.write align(labels[7], maxWidth), ": "
-    if rttValues.len > 0 and totalQueries > 0:
-      let scoreColor = colorRedToGreen(dnsScore)
-      stdout.write scoreColor, &"{int(round(dnsScore))}/100\e[0m\n"
-    else:
-      echo "N/A"
+    let scoreColor = colorize(dnsScore, cdRedGreen)
+    stdout.write scoreColor, &"{int(round(dnsScore))}/100\e[0m\n"
   except CatchableError:
     echo "Error: ", getCurrentExceptionMsg()
   finally:
