@@ -273,9 +273,10 @@ proc main() =
     echo center(title, headerWidth)
     echo repeat("-", headerWidth)
 
-    echo align(labels[0], maxWidth), ": ", totalQueries
+    echo align(labels[0], maxWidth), ": ", insertSep($totalQueries, ',', 3)
 
-    stdout.write align(labels[1], maxWidth), ": ", stats.totalRecursive, " ("
+    stdout.write align(labels[1], maxWidth),
+      ": ", insertSep($stats.totalRecursive, ',', 3), " ("
     let missRateColor = colorize(missRate)
     stdout.write missRateColor, &"{missRate:.1f}%\e[0m)\n"
 
@@ -299,7 +300,8 @@ proc main() =
     let impactColor = colorize(overallImpact, 10.0)
     stdout.write impactColor, &"{overallImpact:.2f}ms\e[0m (avg delay/query)\n"
 
-    stdout.write align(labels[5], maxWidth), ": ", stats.totalCached, " ("
+    stdout.write align(labels[5], maxWidth),
+      ": ", insertSep($stats.totalCached, ',', 3), " ("
     let hitRateColor = colorize(hitRate, cdRedGreen)
     stdout.write hitRateColor, &"{hitRate:.1f}%\e[0m)\n"
 
