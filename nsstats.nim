@@ -13,6 +13,7 @@ type
   StatsResponse = object
     status: string
     response: StatsWrapper
+    errorMessage: Option[string]
 
   ConfigSettings = object
     cacheMaximumEntries: int
@@ -20,6 +21,7 @@ type
   SettingsResponse = object
     status: string
     response: ConfigSettings
+    errorMessage: Option[string]
 
   QueryLogEntry = object
     responseRtt: Option[float]
@@ -30,6 +32,7 @@ type
   QueryLogsResponse = object
     status: string
     response: QueryLogsData
+    errorMessage: Option[string]
 
   ResolverHealth = enum
     rhUnknown
@@ -58,6 +61,30 @@ func colorRedToGreen(value: float): string =
   let g = int(float(redRgb[1]) * (1.0 - normalized) + float(greenRgb[1]) * normalized)
   let b = int(float(redRgb[2]) * (1.0 - normalized) + float(greenRgb[2]) * normalized)
   return &"\e[38;2;{r};{g};{b}m"
+
+proc validateApiResponse(
+    respStatus: string, respError: Option[string], apiName: string
+) =
+  case respStatus
+  of "ok":
+    return
+  of "invalid-token":
+    echo &"Error: {apiName} request failed: Invalid API token"
+    quit(1)
+  of "2fa-required":
+    echo &"Error: 2FA required for {apiName} request (OTP not provided)"
+    quit(1)
+  of "error":
+    let errMsg =
+      if respError.isSome():
+        respError.get()
+      else:
+        "No error message provided"
+    echo &"Error: {apiName} request failed: {errMsg}"
+    quit(1)
+  else:
+    echo &"Error: Unknown status '{respStatus}' from {apiName} request"
+    quit(1)
 
 proc showHelp() =
   echo "Usage: nsstats [OPTIONS]"
@@ -117,8 +144,27 @@ proc main() =
   let client = newHttpClient()
 
   try:
-    let statsResp = parseJson(client.getContent(statsEndpoint)).to(StatsResponse)
+    let statsJson = parseJson(client.getContent(statsEndpoint))
+    let statsStatus = statsJson["status"].getStr()
+    let statsError =
+      if statsJson.hasKey("errorMessage"):
+        some(statsJson["errorMessage"].getStr())
+      else:
+        none(string)
+    validateApiResponse(statsStatus, statsError, "stats")
+    let statsResp = statsJson.to(StatsResponse)
     let stats = statsResp.response.stats
+
+    let settingsJson = parseJson(client.getContent(settingsEndpoint))
+    let settingsStatus = settingsJson["status"].getStr()
+    let settingsError =
+      if settingsJson.hasKey("errorMessage"):
+        some(settingsJson["errorMessage"].getStr())
+      else:
+        none(string)
+    validateApiResponse(settingsStatus, settingsError, "settings")
+    let settingsResp = settingsJson.to(SettingsResponse)
+    let settings = settingsResp.response
 
     let now = getTime().utc
     var endTime = ""
@@ -136,12 +182,15 @@ proc main() =
       &"&classPath=QueryLogsSqlite.App&responseType=Recursive&end={endTime}" &
       &"&entriesPerPage={entriesBuffer}&descendingOrder=true&token={token}"
 
-    let settingsResp =
-      parseJson(client.getContent(settingsEndpoint)).to(SettingsResponse)
-    let queryLogsResp =
-      parseJson(client.getContent(queryLogsEndpoint)).to(QueryLogsResponse)
-
-    let settings = settingsResp.response
+    let queryLogsJson = parseJson(client.getContent(queryLogsEndpoint))
+    let queryLogsStatus = queryLogsJson["status"].getStr()
+    let queryLogsError =
+      if queryLogsJson.hasKey("errorMessage"):
+        some(queryLogsJson["errorMessage"].getStr())
+      else:
+        none(string)
+    validateApiResponse(queryLogsStatus, queryLogsError, "logs")
+    let queryLogsResp = queryLogsJson.to(QueryLogsResponse)
 
     var rttValues: seq[float] = @[]
     for entry in queryLogsResp.response.entries:
