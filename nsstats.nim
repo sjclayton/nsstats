@@ -1,4 +1,5 @@
-import std/[httpclient, json, strutils, strformat, parseopt, options, math, algorithm]
+import
+  std/[httpclient, json, strutils, strformat, parseopt, options, times, math, algorithm]
 
 type
   CacheStats = object
@@ -91,11 +92,18 @@ proc main() =
     let statsResp = parseJson(client.getContent(statsEndpoint)).to(StatsResponse)
     let stats = statsResp.response.stats
 
+    let now = getTime().utc
+    var endTime = ""
+    if isDay:
+      endTime = now.format("yyyy-MM-dd'T'HH") & ":00:00Z"
+    else:
+      endTime = now.format("yyyy-MM-dd'T'HH:mm") & ":00Z"
+
     let entriesBuffer = $(stats.totalRecursive + 1)
 
     let queryLogsEndpoint =
       &"http://{host}:{port}/api/logs/query?name=Query%20Logs%20(Sqlite)" &
-      &"&classPath=QueryLogsSqlite.App&responseType=Recursive" &
+      &"&classPath=QueryLogsSqlite.App&responseType=Recursive&end={endTime}" &
       &"&entriesPerPage={entriesBuffer}&descendingOrder=true&token={token}"
 
     let settingsResp =
