@@ -197,14 +197,13 @@ proc main() =
       if entry.responseRtt.isSome():
         rttValues.add(entry.responseRtt.get())
 
+    let hasRtts = rttValues.len > 0
+
     let totalQueries = stats.totalCached + stats.totalRecursive
     let hitRate = calculatePercent(stats.totalCached, totalQueries)
     let missRate = 100.0 - hitRate
     let cachePopulation =
       calculatePercent(stats.cachedEntries, settings.cacheMaximumEntries)
-
-    let hasRtts = rttValues.len > 0
-    let hasQueries = totalQueries > 0
 
     var medianRtt = 0.0
     var meanRtt = 0.0
@@ -243,7 +242,6 @@ proc main() =
       let recursiveWeight = float(stats.totalRecursive) / float(totalQueries)
       overallImpact = meanRtt * recursiveWeight
 
-    if hasRtts and hasQueries:
       let impactScore = 100.0 - clamp((overallImpact / 20.0) * 100.0, 0.0, 100.0)
       let cacheScore = hitRate
       let tailScore = 100.0 - clamp((p99Rtt / 500.0) * 100.0, 0.0, 100.0)
@@ -256,8 +254,6 @@ proc main() =
       dnsScore =
         (impactScore * 0.30) + (cacheScore * 0.40) + (tailScore * 0.20) +
         (populationScore * 0.10)
-    else:
-      dnsScore = 0.0
 
     const labels = [
       "Total Queries", "Recursive Lookups", "Med/Avg/99% RTT", "Resolver Health",
