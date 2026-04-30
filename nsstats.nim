@@ -198,6 +198,10 @@ proc main() =
         rttValues.add(entry.responseRtt.get())
 
     let totalQueries = stats.totalCached + stats.totalRecursive
+    let hitRate = calculatePercent(stats.totalCached, totalQueries)
+    let missRate = 100.0 - hitRate
+    let cachePopulation =
+      calculatePercent(stats.cachedEntries, settings.cacheMaximumEntries)
 
     let hasRtts = rttValues.len > 0
     let hasQueries = totalQueries > 0
@@ -238,11 +242,6 @@ proc main() =
 
       let recursiveWeight = float(stats.totalRecursive) / float(totalQueries)
       overallImpact = meanRtt * recursiveWeight
-
-    let hitRate = calculatePercent(stats.totalCached, totalQueries)
-    let missRate = 100.0 - hitRate
-    let cachePopulation =
-      calculatePercent(stats.cachedEntries, settings.cacheMaximumEntries)
 
     if hasRtts and hasQueries:
       let impactScore = 100.0 - clamp((overallImpact / 10.0) * 100.0, 0.0, 100.0)
