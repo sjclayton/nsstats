@@ -86,6 +86,19 @@ proc validateApiResponse(
     echo &"Error: Unknown status '{respStatus}' from {apiName} request"
     quit(1)
 
+proc fetchApi[T](client: HttpClient, url: string, label: string): T =
+  let jsonNode = parseJson(client.getContent(url))
+
+  let status = jsonNode["status"].getStr()
+  let errorMsg =
+    if jsonNode.hasKey("errorMessage"):
+      some(jsonNode["errorMessage"].getStr())
+    else:
+      none(string)
+
+  validateApiResponse(status, errorMsg, label)
+  return jsonNode.to(T)
+
 proc showHelp() =
   echo "Usage: nsstats [OPTIONS]"
   echo ""
@@ -144,27 +157,9 @@ proc main() =
   let client = newHttpClient()
 
   try:
-    let statsJson = parseJson(client.getContent(statsEndpoint))
-    let statsStatus = statsJson["status"].getStr()
-    let statsError =
-      if statsJson.hasKey("errorMessage"):
-        some(statsJson["errorMessage"].getStr())
-      else:
-        none(string)
-    validateApiResponse(statsStatus, statsError, "stats")
-    let statsResp = statsJson.to(StatsResponse)
-    let stats = statsResp.response.stats
-
-    let settingsJson = parseJson(client.getContent(settingsEndpoint))
-    let settingsStatus = settingsJson["status"].getStr()
-    let settingsError =
-      if settingsJson.hasKey("errorMessage"):
-        some(settingsJson["errorMessage"].getStr())
-      else:
-        none(string)
-    validateApiResponse(settingsStatus, settingsError, "settings")
-    let settingsResp = settingsJson.to(SettingsResponse)
-    let settings = settingsResp.response
+    let stats = fetchApi[StatsResponse](client, statsEndpoint, "stats").response.stats
+    let settings =
+      fetchApi[SettingsResponse](client, settingsEndpoint, "settings").response
 
     let now = getTime().utc
     var endTime = ""
@@ -182,18 +177,10 @@ proc main() =
       &"&classPath=QueryLogsSqlite.App&responseType=Recursive&end={endTime}" &
       &"&entriesPerPage={entriesBuffer}&descendingOrder=true&token={token}"
 
-    let queryLogsJson = parseJson(client.getContent(queryLogsEndpoint))
-    let queryLogsStatus = queryLogsJson["status"].getStr()
-    let queryLogsError =
-      if queryLogsJson.hasKey("errorMessage"):
-        some(queryLogsJson["errorMessage"].getStr())
-      else:
-        none(string)
-    validateApiResponse(queryLogsStatus, queryLogsError, "logs")
-    let queryLogsResp = queryLogsJson.to(QueryLogsResponse)
+    let logs = fetchApi[QueryLogsResponse](client, queryLogsEndpoint, "logs").response
 
     var rttValues: seq[float] = @[]
-    for entry in queryLogsResp.response.entries:
+    for entry in logs.entries:
       if entry.responseRtt.isSome():
         rttValues.add(entry.responseRtt.get())
 
