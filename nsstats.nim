@@ -59,20 +59,42 @@ func colorRedToGreen(value: float): string =
   let b = int(float(redRgb[2]) * (1.0 - normalized) + float(greenRgb[2]) * normalized)
   return &"\e[38;2;{r};{g};{b}m"
 
+proc showHelp() =
+  echo "Usage: nsstats [OPTIONS]"
+  echo ""
+  echo "Options:"
+  echo "  -d, --daily    Show daily stats (last 24 hours)"
+  echo "  -w, --weekly   Show weekly stats (last 7 days)"
+  echo "  -h, --help     Show this help message"
+  echo ""
+  echo "If no option is provided, shows current (last hour) stats."
+
 proc main() =
-  var isDay = false
+  var isDaily = false
+  var isWeekly = false
   var p = initOptParser()
 
   for kind, key, val in p.getopt():
     case kind
     of cmdLongOption, cmdShortOption:
       case key
-      of "d", "day":
-        isDay = true
+      of "d", "daily":
+        isDaily = true
+      of "w", "weekly":
+        isWeekly = true
+      of "h", "help":
+        showHelp()
+        quit(0)
       else:
-        quit("Invalid option: " & key, 1)
+        echo "Invalid option: " & key
+        echo ""
+        showHelp()
+        quit(1)
     of cmdArgument:
-      quit("Unexpected argument: " & key, 1)
+      echo "Unexpected argument: " & key
+      echo ""
+      showHelp()
+      quit(1)
     of cmdEnd:
       discard
 
@@ -80,7 +102,13 @@ proc main() =
   const port = "5380"
   const token = "a33e3882924ad719ca47db6ae18cabdb6dad5a4db75c602febb22eee50c0295b"
 
-  let queryType = if isDay: "type=LastDay" else: ""
+  let queryType =
+    if isDaily:
+      "type=LastDay"
+    elif isWeekly:
+      "type=LastWeek"
+    else:
+      ""
 
   let statsEndpoint =
     &"http://{host}:{port}/api/dashboard/stats/get?{queryType}&token={token}"
@@ -94,8 +122,10 @@ proc main() =
 
     let now = getTime().utc
     var endTime = ""
-    if isDay:
+    if isDaily:
       endTime = now.format("yyyy-MM-dd'T'HH") & ":00:00Z"
+    elif isWeekly:
+      endTime = now.format("yyyy-MM-dd'T'") & "00:00:00Z"
     else:
       endTime = now.format("yyyy-MM-dd'T'HH:mm") & ":00Z"
 
@@ -181,7 +211,13 @@ proc main() =
     for l in labels:
       maxWidth = max(maxWidth, l.len + 2)
 
-    let title = if isDay: "Daily DNS Statistics " else: "Hourly DNS Statistics"
+    let title =
+      if isDaily:
+        "Daily DNS Statistics "
+      elif isWeekly:
+        "Weekly DNS Statistics"
+      else:
+        "Hourly DNS Statistics"
     let headerWidth = 53
     echo center(title, headerWidth)
     echo repeat("-", headerWidth)
