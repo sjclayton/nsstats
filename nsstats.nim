@@ -233,9 +233,9 @@ proc main() =
 
       stabilityPenalty = max(0.0, meanRtt - medianRtt)
       healthStatus =
-        if stabilityPenalty < 10.0:
+        if stabilityPenalty < 5.0:
           rhOptimal
-        elif stabilityPenalty < 50.0:
+        elif stabilityPenalty < 20.0:
           rhFair
         else:
           rhDegraded
@@ -244,12 +244,18 @@ proc main() =
       overallImpact = meanRtt * recursiveWeight
 
     if hasRtts and hasQueries:
-      let impactScore = 100.0 - clamp((overallImpact / 10.0) * 100.0, 0.0, 100.0)
+      let impactScore = 100.0 - clamp((overallImpact / 20.0) * 100.0, 0.0, 100.0)
       let cacheScore = hitRate
-      let tailPenalty = clamp((p99Rtt / 500.0) * 100.0, 0.0, 100.0)
-      let tailScore = 100.0 - tailPenalty
+      let tailScore = 100.0 - clamp((p99Rtt / 500.0) * 100.0, 0.0, 100.0)
+      let populationScore =
+        if cachePopulation >= 90.0:
+          100.0 - cachePopulation
+        else:
+          100.0
 
-      dnsScore = (impactScore * 0.60) + (cacheScore * 0.30) + (tailScore * 0.10)
+      dnsScore =
+        (impactScore * 0.30) + (cacheScore * 0.40) + (tailScore * 0.20) +
+        (populationScore * 0.10)
     else:
       dnsScore = 0.0
 
@@ -297,7 +303,7 @@ proc main() =
     stdout.write healthColor, healthLabel, "\e[0m\n"
 
     stdout.write align(labels[4], maxWidth), ": "
-    let impactColor = colorize(overallImpact, 10.0)
+    let impactColor = colorize(overallImpact, 20.0)
     stdout.write impactColor, &"{overallImpact:.2f}ms\e[0m (avg delay/query)\n"
 
     stdout.write align(labels[5], maxWidth),
