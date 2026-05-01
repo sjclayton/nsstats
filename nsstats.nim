@@ -48,9 +48,9 @@ func calculatePercent(part: int, total: int): float =
     return (float(part) / float(total)) * 100.0
   return 0.0
 
-const greenRgb = (166, 227, 161)
-const yellowRgb = (249, 226, 175)
-const redRgb = (243, 139, 168)
+const GreenRgb = (166, 227, 161)
+const YellowRgb = (249, 226, 175)
+const RedRgb = (243, 139, 168)
 
 func colorize(
     value: float, cap: float = 100.0, direction: ColorDirection = cdGreenRed
@@ -58,9 +58,9 @@ func colorize(
   let (fromRgb, toRgb, effectiveCap) =
     case direction
     of cdGreenRed:
-      (greenRgb, redRgb, cap)
+      (GreenRgb, RedRgb, cap)
     of cdRedGreen:
-      (redRgb, greenRgb, 100.0)
+      (RedRgb, GreenRgb, 100.0)
 
   let normalized = clamp(value / effectiveCap, 0.0, 1.0)
   let r = int(float(toRgb[0]) * normalized + float(fromRgb[0]) * (1.0 - normalized))
@@ -74,11 +74,11 @@ func colorize(value: float, direction: ColorDirection): string =
 func getHealthInfo(status: ResolverHealth): (string, string) =
   case status
   of rhOptimal:
-    ("Optimal", &"\e[38;2;{greenRgb[0]};{greenRgb[1]};{greenRgb[2]}m")
+    ("Optimal", &"\e[38;2;{GreenRgb[0]};{GreenRgb[1]};{GreenRgb[2]}m")
   of rhFair:
-    ("Fair", &"\e[38;2;{yellowRgb[0]};{yellowRgb[1]};{yellowRgb[2]}m")
+    ("Fair", &"\e[38;2;{YellowRgb[0]};{YellowRgb[1]};{YellowRgb[2]}m")
   of rhDegraded:
-    ("Degraded", &"\e[38;2;{redRgb[0]};{redRgb[1]};{redRgb[2]}m")
+    ("Degraded", &"\e[38;2;{RedRgb[0]};{RedRgb[1]};{RedRgb[2]}m")
   of rhUnknown:
     ("N/A", "\e[0m")
 
@@ -266,9 +266,9 @@ proc main() =
   var isWeekly = false
   var altConfig = ""
   var expectConfigValue = false
-  var p = initOptParser()
+  var parser = initOptParser()
 
-  for kind, key, val in p.getopt():
+  for kind, key, val in parser.getopt():
     case kind
     of cmdLongOption, cmdShortOption:
       case key
@@ -365,7 +365,7 @@ proc main() =
       if entry.responseRtt.isSome():
         rttValues.add(entry.responseRtt.get())
 
-    let hasRtts = rttValues.len > 0
+    let hasRttValues = rttValues.len > 0
 
     let totalQueries = stats.totalCached + stats.totalRecursive
     let hitRate = calculatePercent(stats.totalCached, totalQueries)
@@ -381,7 +381,7 @@ proc main() =
     var overallImpact = 0.0
     var dnsScore = 0.0
 
-    if hasRtts:
+    if hasRttValues:
       rttValues.sort()
       let mid = rttValues.len div 2
       medianRtt =
@@ -423,13 +423,13 @@ proc main() =
         (impactScore * 0.40) + (cacheScore * 0.35) + (tailScore * 0.15) +
         (populationScore * 0.10)
 
-    const labels = [
+    const Labels = [
       "Total Queries", "Recursive Lookups", "Med/Avg/99% RTT", "Resolver Health",
       "Overall Impact", "Cached Responses", "Cache Population", "DNS Score",
     ]
 
     var maxWidth = 0
-    for l in labels:
+    for l in Labels:
       maxWidth = max(maxWidth, l.len + 2)
 
     let title =
@@ -443,15 +443,15 @@ proc main() =
     echo center(title, headerWidth)
     echo repeat("-", headerWidth)
 
-    echo align(labels[0], maxWidth), ": ", insertSep($totalQueries, ',', 3)
+    echo align(Labels[0], maxWidth), ": ", insertSep($totalQueries, ',', 3)
 
-    stdout.write align(labels[1], maxWidth),
+    stdout.write align(Labels[1], maxWidth),
       ": ", insertSep($stats.totalRecursive, ',', 3), " ("
     let missRateColor = colorize(missRate)
     stdout.write missRateColor, &"{missRate:.1f}%\e[0m)\n"
 
-    stdout.write align(labels[2], maxWidth), ": "
-    if hasRtts:
+    stdout.write align(Labels[2], maxWidth), ": "
+    if hasRttValues:
       let medColor = colorize(medianRtt, 100.0)
       let meanColor = colorize(meanRtt, 100.0)
       let p99Color = colorize(p99Rtt, 300.0)
@@ -462,29 +462,29 @@ proc main() =
     else:
       echo "N/A"
 
-    stdout.write align(labels[3], maxWidth), ": "
+    stdout.write align(Labels[3], maxWidth), ": "
     let (healthLabel, healthColor) = getHealthInfo(healthStatus)
     stdout.write healthColor, healthLabel, "\e[0m\n"
 
-    stdout.write align(labels[4], maxWidth), ": "
-    if hasRtts:
+    stdout.write align(Labels[4], maxWidth), ": "
+    if hasRttValues:
       let impactColor = colorize(overallImpact, 20.0)
       stdout.write impactColor, &"{overallImpact:.2f}ms\e[0m (avg delay/lookup)\n"
     else:
       echo "N/A"
 
-    stdout.write align(labels[5], maxWidth),
+    stdout.write align(Labels[5], maxWidth),
       ": ", insertSep($stats.totalCached, ',', 3), " ("
     let hitRateColor = colorize(hitRate, cdRedGreen)
     stdout.write hitRateColor, &"{hitRate:.1f}%\e[0m)\n"
 
-    stdout.write align(labels[6], maxWidth), ": "
+    stdout.write align(Labels[6], maxWidth), ": "
     let cachePopColor = colorize(cachePopulation)
     stdout.write &"{stats.cachedEntries}/{settings.cacheMaximumEntries} ("
     stdout.write cachePopColor, &"{cachePopulation:.1f}%\e[0m)\n\n"
 
-    stdout.write align(labels[7], maxWidth), ": "
-    if hasRtts:
+    stdout.write align(Labels[7], maxWidth), ": "
+    if hasRttValues:
       let scoreColor = colorize(dnsScore, cdRedGreen)
       stdout.write scoreColor, &"{int(round(dnsScore))}/100\e[0m\n"
     else:
