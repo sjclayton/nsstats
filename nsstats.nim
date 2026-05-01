@@ -82,20 +82,20 @@ func getHealthInfo(status: ResolverHealth): (string, string) =
   of rhUnknown:
     ("N/A", "\e[0m")
 
-proc getConfigDir(): string =
+func getConfigDir(): string =
   let xdgConfigHome = getEnv("XDG_CONFIG_HOME")
   if xdgConfigHome != "":
     result = xdgConfigHome / "nsstats"
   else:
     result = getHomeDir() / ".config" / "nsstats"
 
-proc getConfigPath(altConfig: string = ""): string =
+func getConfigPath(altConfig: string = ""): string =
   if altConfig != "":
     result = altConfig
   else:
     result = getConfigDir() / "config.toml"
 
-proc isValidHost(host: string): bool =
+func isValidHost(host: string): bool =
   try:
     let ipAddr = parseIpAddress(host)
     if ipAddr.family == IpAddressFamily.IPv4:
@@ -111,7 +111,7 @@ proc isValidHost(host: string): bool =
 
   return false
 
-proc isValidPort(portStr: string): bool =
+func isValidPort(portStr: string): bool =
   try:
     let portNum = parseInt(portStr)
     return portNum >= 1 and portNum <= 65535
@@ -179,6 +179,7 @@ proc createConfig(configPath: string): Config =
   saveConfig(result, configPath)
   echo ""
   echo "Configuration saved successfully."
+  echo ""
 
 proc loadConfig(configPath: string): Config =
   let config = parsetoml.parseFile(configPath)
@@ -255,8 +256,7 @@ proc showHelp() =
   echo ""
   echo "If no option is provided, shows current (last hour) stats."
   echo ""
-  echo "First run will prompt to create a config in $XDG_CONFIG_HOME/nsstats/config.toml,"
-  echo "if one does not already exist."
+  echo "First run will prompt to create a config in $XDG_CONFIG_HOME/nsstats/config.toml, if one doesn't already exist."
 
 proc main() =
   var isDaily = false
