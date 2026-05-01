@@ -1,5 +1,9 @@
 import
-  std/[httpclient, json, strutils, strformat, parseopt, options, times, math, algorithm]
+  std/[
+    httpclient, json, strutils, strformat, parseopt, options, times, math, algorithm,
+    os, net,
+  ],
+  parsetoml
 
 type
   Stats = object
@@ -33,6 +37,11 @@ type
   ColorDirection = enum
     cdGreenRed
     cdRedGreen
+
+  Config = object
+    host: string
+    port: string
+    token: string
 
 func calculatePercent(part: int, total: int): float =
   if total > 0:
@@ -72,6 +81,134 @@ func getHealthInfo(status: ResolverHealth): (string, string) =
     ("Degraded", &"\e[38;2;{redRgb[0]};{redRgb[1]};{redRgb[2]}m")
   of rhUnknown:
     ("N/A", "\e[0m")
+
+proc getConfigDir(): string =
+  let xdgConfigHome = getEnv("XDG_CONFIG_HOME")
+  if xdgConfigHome != "":
+    result = xdgConfigHome / "nsstats"
+  else:
+    result = getHomeDir() / ".config" / "nsstats"
+
+proc getConfigPath(altConfig: string = ""): string =
+  if altConfig != "":
+    result = altConfig
+  else:
+    result = getConfigDir() / "config.toml"
+
+proc isValidHost(host: string): bool =
+  try:
+    let ipAddr = parseIpAddress(host)
+    if ipAddr.family == IpAddressFamily.IPv4:
+      return true
+  except:
+    discard
+
+  if host.contains('.'):
+    for c in host:
+      if not (c in {'a' .. 'z', 'A' .. 'Z', '0' .. '9', '-', '.', '_'}):
+        return false
+    return true
+
+  return false
+
+proc isValidPort(portStr: string): bool =
+  try:
+    let portNum = parseInt(portStr)
+    return portNum >= 1 and portNum <= 65535
+  except:
+    return false
+
+proc saveConfig(config: Config, configPath: string) =
+  let dir = parentDir(configPath)
+  if dir != "" and not dirExists(dir):
+    createDir(dir)
+
+  let tomlContent = &"""
+host = "{config.host}"
+port = "{config.port}"
+token = "{config.token}"
+"""
+  writeFile(configPath, tomlContent)
+
+proc createConfig(configPath: string): Config =
+  echo "No configuration found"
+  echo "Initializing new config file..."
+  echo "Config file will be saved to: ", configPath
+  echo ""
+
+  # Get host
+  var hostValid = false
+  while not hostValid:
+    stdout.write "Enter host (IP or FQDN): "
+    let host = stdin.readLine().strip()
+    if host == "":
+      echo "Error: Host is required."
+      continue
+    if not isValidHost(host):
+      echo "Error: Invalid host. Must be a valid IPv4 address or FQDN."
+      continue
+    result.host = host
+    hostValid = true
+
+  # Get port (optional)
+  var portValid = false
+  var port = ""
+  while not portValid:
+    stdout.write "Enter port (default = 5380): "
+    port = stdin.readLine().strip()
+    if port == "":
+      result.port = "5380"
+      portValid = true
+    elif isValidPort(port):
+      result.port = port
+      portValid = true
+    else:
+      echo "Error: Port must be between 1-65535."
+
+  # Get token
+  var tokenValid = false
+  while not tokenValid:
+    stdout.write "Enter API token: "
+    let token = stdin.readLine().strip()
+    if token == "":
+      echo "Error: API token is required."
+      continue
+    result.token = token
+    tokenValid = true
+
+  saveConfig(result, configPath)
+  echo ""
+  echo "Configuration saved successfully."
+
+proc loadConfig(configPath: string): Config =
+  let config = parsetoml.parseFile(configPath)
+  let host = config["host"].getStr()
+  let token = config["token"].getStr()
+
+  if host == "":
+    echo "Error: 'host' is required in config file: ", configPath
+    quit(1)
+
+  if not isValidHost(host):
+    echo "Error: Invalid host in config file: ", host
+    quit(1)
+
+  if token == "":
+    echo "Error: 'token' is required in config file: ", configPath
+    quit(1)
+
+  result.host = host
+  result.token = token
+  result.port =
+    if config.hasKey("port"):
+      let p = config["port"].getStr()
+      if isValidPort(p):
+        p
+      else:
+        echo "Error: Invalid port in config file: ", p
+        quit(1)
+    else:
+      "5380"
 
 proc validateApiResponse(
     respStatus: string, respError: Option[string], apiName: string
@@ -116,13 +253,19 @@ proc showHelp() =
   echo "Options:"
   echo "  -d, --daily    Show daily stats (last 24 hours)"
   echo "  -w, --weekly   Show weekly stats (last 7 days)"
+  echo "  -c, --config   Use an alternate config file (-c /path/to/config.toml)"
   echo "  -h, --help     Show this help message"
   echo ""
   echo "If no option is provided, shows current (last hour) stats."
+  echo ""
+  echo "First run will prompt to create a config in $XDG_CONFIG_HOME/nsstats/config.toml,"
+  echo "if one does not already exist."
 
 proc main() =
   var isDaily = false
   var isWeekly = false
+  var altConfig = ""
+  var expectConfigValue = false
   var p = initOptParser()
 
   for kind, key, val in p.getopt():
@@ -133,6 +276,11 @@ proc main() =
         isDaily = true
       of "w", "weekly":
         isWeekly = true
+      of "c", "config":
+        if val != "":
+          altConfig = val
+        else:
+          expectConfigValue = true
       of "h", "help":
         showHelp()
         quit(0)
@@ -142,16 +290,36 @@ proc main() =
         showHelp()
         quit(1)
     of cmdArgument:
-      echo "Unexpected argument: " & key
-      echo ""
-      showHelp()
-      quit(1)
+      if expectConfigValue:
+        altConfig = key
+        expectConfigValue = false
+      else:
+        echo "Unexpected argument: " & key
+        echo ""
+        showHelp()
+        quit(1)
     of cmdEnd:
       discard
 
-  const host = "192.168.1.10"
-  const port = "5380"
-  const token = "a33e3882924ad719ca47db6ae18cabdb6dad5a4db75c602febb22eee50c0295b"
+  if expectConfigValue:
+    echo "Error: -c/--config requires a value"
+    quit(1)
+
+  let configPath = getConfigPath(altConfig)
+
+  var config: Config
+  if fileExists(configPath):
+    config = loadConfig(configPath)
+  else:
+    if altConfig == "":
+      config = createConfig(configPath)
+    else:
+      echo "Error: Config file not found: ", configPath
+      quit(1)
+
+  let host = config.host
+  let port = config.port
+  let token = config.token
 
   let queryType =
     if isDaily:
@@ -301,7 +469,7 @@ proc main() =
     stdout.write align(labels[4], maxWidth), ": "
     if hasRtts:
       let impactColor = colorize(overallImpact, 20.0)
-      stdout.write impactColor, &"{overallImpact:.2f}ms\e[0m (avg delay/query)\n"
+      stdout.write impactColor, &"{overallImpact:.2f}ms\e[0m (avg delay/lookup)\n"
     else:
       echo "N/A"
 
