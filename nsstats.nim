@@ -219,9 +219,6 @@ proc validateApiResponse(
   of "invalid-token":
     echo &"Error: {apiName} request failed: Invalid API token"
     quit(1)
-  of "2fa-required":
-    echo &"Error: 2FA required for {apiName} request (OTP not provided)"
-    quit(1)
   of "error":
     let errMsg =
       if respError.isSome():
