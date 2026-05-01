@@ -232,7 +232,7 @@ proc main() =
 
       stabilityPenalty = max(0.0, meanRtt - medianRtt)
       healthStatus =
-        if stabilityPenalty < 5.0:
+        if stabilityPenalty < 10.0:
           rhOptimal
         elif stabilityPenalty < 20.0:
           rhFair
@@ -252,7 +252,7 @@ proc main() =
           100.0
 
       dnsScore =
-        (impactScore * 0.30) + (cacheScore * 0.40) + (tailScore * 0.20) +
+        (impactScore * 0.40) + (cacheScore * 0.35) + (tailScore * 0.15) +
         (populationScore * 0.10)
 
     const labels = [
@@ -299,8 +299,11 @@ proc main() =
     stdout.write healthColor, healthLabel, "\e[0m\n"
 
     stdout.write align(labels[4], maxWidth), ": "
-    let impactColor = colorize(overallImpact, 20.0)
-    stdout.write impactColor, &"{overallImpact:.2f}ms\e[0m (avg delay/query)\n"
+    if hasRtts:
+      let impactColor = colorize(overallImpact, 20.0)
+      stdout.write impactColor, &"{overallImpact:.2f}ms\e[0m (avg delay/query)\n"
+    else:
+      echo "N/A"
 
     stdout.write align(labels[5], maxWidth),
       ": ", insertSep($stats.totalCached, ',', 3), " ("
@@ -313,8 +316,11 @@ proc main() =
     stdout.write cachePopColor, &"{cachePopulation:.1f}%\e[0m)\n\n"
 
     stdout.write align(labels[7], maxWidth), ": "
-    let scoreColor = colorize(dnsScore, cdRedGreen)
-    stdout.write scoreColor, &"{int(round(dnsScore))}/100\e[0m\n"
+    if hasRtts:
+      let scoreColor = colorize(dnsScore, cdRedGreen)
+      stdout.write scoreColor, &"{int(round(dnsScore))}/100\e[0m\n"
+    else:
+      echo "N/A"
   except CatchableError:
     echo "Error: ", getCurrentExceptionMsg()
   finally:
