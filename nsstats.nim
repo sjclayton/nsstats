@@ -145,7 +145,7 @@ proc createConfig(configPath: string): Config =
       echo "Error: Host is required."
       continue
     if not isValidHost(host):
-      echo "Error: Invalid host. Must be a valid IPv4 address or FQDN."
+      echo "Error: Invalid host: Must be a valid IPv4 address or FQDN."
       continue
     result.host = host
     hostValid = true
@@ -163,7 +163,7 @@ proc createConfig(configPath: string): Config =
       result.port = port
       portValid = true
     else:
-      echo "Error: Port must be between 1-65535."
+      echo "Error: Invalid port: Must be between 1-65535."
 
   # Get token
   var tokenValid = false
