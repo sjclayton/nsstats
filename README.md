@@ -11,13 +11,13 @@ A simple terminal-based DNS statistics viewer for [Technitium DNS Server](https:
 - **Performance metrics** including recursive response times (median, average, 99th percentile)
 - **Resolver health indicator** - Shows the performance of your configured resolver based on your Internet connection
 - **Cache efficiency tracking** with hit/miss rates and population stats
-- **DNS Score** - Composite experience score (0-100) based on multiple metrics, gives you an at a glance idea of your DNS performance
+- **DNS Score** - Composite experience score (0-100) based on multiple metrics, gives you an at-a-glance idea of your DNS performance
 - **First-run configuration wizard** for easy setup
 
 ## Requirements
 
 - **Only Linux is supported at this time**
-- [Technitium DNS Server](https://technitium.com/dns/) instance with the **Query Logs (SQLite) App** installed
+- A [Technitium DNS Server](https://technitium.com/dns/) instance with the **Query Logs (SQLite) App** installed
   - Must be configured to use the **in-memory database** option for performance reasons.
 - A Technitium API token with the following permissions:
   - `Dashboard:View`
@@ -42,7 +42,7 @@ nimble release -y
 ```
 
 The compiled binary will be at `bin/nsstats`, you can place it in your `$PATH` or copy it
-to another location of your choice for convienience.
+to another location of your choice for convenience.
 
 **Prerequisites for building:**
 
