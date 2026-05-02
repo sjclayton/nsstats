@@ -134,7 +134,6 @@ proc createConfig(configPath: string): Config =
   echo &"""No configuration found
 Initializing new config file...
 Config file will be saved to: {configPath}
-
 """
 
   # Get host

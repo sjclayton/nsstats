@@ -6,8 +6,8 @@ A simple terminal-based DNS statistics viewer for [Technitium DNS Server](https:
 
 ## Features
 
-- **Real-time DNS statistics** displayed in a colorized terminal interface
-- **Time range selection** - View hourly, daily, or weekly statistics
+- **Live DNS statistics** displayed in a dynamically colorized terminal interface
+- **Time range selection** - View hourly (updated minutely), daily (updated hourly), or weekly (updated daily) statistics
 - **Performance metrics** including recursive response times (median, average, 99th percentile)
 - **Resolver health indicator** - Shows the performance of your configured resolver based on your Internet connection
 - **Cache efficiency tracking** with hit/miss rates and population stats
