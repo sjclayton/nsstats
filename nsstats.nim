@@ -131,10 +131,11 @@ token = "{config.token}"
   writeFile(configPath, tomlContent)
 
 proc createConfig(configPath: string): Config =
-  echo "No configuration found"
-  echo "Initializing new config file..."
-  echo "Config file will be saved to: ", configPath
-  echo ""
+  echo &"""No configuration found
+Initializing new config file...
+Config file will be saved to: {configPath}
+
+"""
 
   # Get host
   var hostValid = false
@@ -246,17 +247,19 @@ proc fetchApi[T](client: HttpClient, url: string, label: string): T =
   return jsonNode.to(T)
 
 proc showHelp() =
-  echo "Usage: nsstats [OPTIONS]"
-  echo ""
-  echo "Options:"
-  echo "  -d, --daily    Show daily stats (last 24 hours)"
-  echo "  -w, --weekly   Show weekly stats (last 7 days)"
-  echo "  -c, --config   Use an alternate config file (-c /path/to/config.toml)"
-  echo "  -h, --help     Show this help message"
-  echo ""
-  echo "If no option is provided, shows current (last hour) stats."
-  echo ""
-  echo "First run will prompt to create a config in $XDG_CONFIG_HOME/nsstats/config.toml, if one doesn't already exist."
+  echo """
+Usage: nsstats [OPTIONS]
+
+Options:
+  -d, --daily    Show daily stats (last 24 hours)
+  -w, --weekly   Show weekly stats (last 7 days)
+  -c, --config   Use an alternate config file (-c /path/to/config.toml)
+  -h, --help     Show this help message
+
+If no option is provided, shows current (last hour) stats.
+
+First run will prompt to create a config in $XDG_CONFIG_HOME/nsstats/config.toml, if one doesn't already exist.
+"""
 
 proc main() =
   var isDaily = false
