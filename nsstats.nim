@@ -71,7 +71,7 @@ func colorize(
 func colorize(value: float, direction: ColorDirection): string =
   colorize(value, 100.0, direction)
 
-func getHealthInfo(status: ResolverHealth): (string, string) =
+func getHealthStatus(status: ResolverHealth): (string, string) =
   case status
   of rhOptimal:
     ("Optimal", &"\e[38;2;{GreenRgb[0]};{GreenRgb[1]};{GreenRgb[2]}m")
@@ -82,18 +82,11 @@ func getHealthInfo(status: ResolverHealth): (string, string) =
   of rhUnknown:
     ("N/A", "\e[0m")
 
-func getConfigDir(): string =
-  let xdgConfigHome = getEnv("XDG_CONFIG_HOME")
-  if xdgConfigHome != "":
-    result = xdgConfigHome / "nsstats"
-  else:
-    result = getHomeDir() / ".config" / "nsstats"
-
 func getConfigPath(altConfig: string = ""): string =
   if altConfig != "":
-    result = altConfig
+    altConfig
   else:
-    result = getConfigDir() / "config.toml"
+    getConfigDir() / "nsstats" / "config.toml"
 
 func isValidHost(host: string): bool =
   try:
@@ -462,7 +455,7 @@ proc main() =
       echo "N/A"
 
     stdout.write align(Labels[3], maxWidth), ": "
-    let (healthLabel, healthColor) = getHealthInfo(healthStatus)
+    let (healthLabel, healthColor) = getHealthStatus(healthStatus)
     stdout.write healthColor, healthLabel, "\e[0m\n"
 
     stdout.write align(Labels[4], maxWidth), ": "
