@@ -357,6 +357,10 @@ proc main() =
       if entry.responseRtt.isSome():
         rttValues.add(entry.responseRtt.get())
 
+    assert(
+      rttValues.len <= parseInt(entriesBuffer),
+      &"entriesBuffer overflow: got: {rttValues.len} values, want: <={entriesBuffer}",
+    )
     let hasRttValues = rttValues.len > 0
 
     let totalQueries = stats.totalCached + stats.totalRecursive
