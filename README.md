@@ -37,8 +37,11 @@ Download the latest release from the [GitHub Releases](https://github.com/sjclay
 git clone https://github.com/sjclayton/nsstats.git
 cd nsstats
 
+# Build debug (development) binary
+nimble debug
+
 # Build release binary
-nimble release -y
+nimble release
 ```
 
 The compiled binary will be at `bin/nsstats`, you can place it in your `$PATH` or copy it
@@ -81,8 +84,9 @@ Configuration is stored in TOML format at:
 Example configuration:
 
 ```toml
+conn_mode = "http" # Options: "http", "https"
 host = "192.168.1.1"
-port = "5380"
+port = "5380" # Defaults: HTTP -> 5380, HTTPS -> 53443
 token = "your-api-token-here"
 ```
 

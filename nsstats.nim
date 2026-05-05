@@ -39,6 +39,7 @@ type
     cdRedGreen
 
   Config = object
+    connMode: string
     host: string
     port: string
     token: string
@@ -117,6 +118,7 @@ proc saveConfig(config: Config, configPath: string) =
     createDir(dir)
 
   let tomlContent = &"""
+conn_mode = "{config.connMode}"
 host = "{config.host}"
 port = "{config.port}"
 token = "{config.token}"
@@ -128,6 +130,22 @@ proc createConfig(configPath: string): Config =
 Initializing new config file...
 Config file will be saved to: {configPath}
 """
+
+  # Get connection mode
+  var connModeValid = false
+  while not connModeValid:
+    stdout.write "Choose connection mode (0 = http (default), 1 = https): "
+    let input = stdin.readLine().strip()
+    let modeStr =
+      case input
+      of "", "0": "http"
+      of "1": "https"
+      else: ""
+    if modeStr != "":
+      result.connMode = modeStr
+      connModeValid = true
+    else:
+      echo "Error: Invalid connection mode. Must be 0 (http) or 1 (https)."
 
   # Get host
   var hostValid = false
@@ -143,14 +161,15 @@ Config file will be saved to: {configPath}
     result.host = host
     hostValid = true
 
-  # Get port (optional)
+  # Get port [optional]
   var portValid = false
   var port = ""
+  let defaultPort = if result.connMode == "https": "53443" else: "5380"
   while not portValid:
-    stdout.write "Enter port (default = 5380): "
+    stdout.write &"Enter port (default = {defaultPort}): "
     port = stdin.readLine().strip()
     if port == "":
-      result.port = "5380"
+      result.port = defaultPort
       portValid = true
     elif isValidPort(port):
       result.port = port
@@ -179,18 +198,43 @@ proc loadConfig(configPath: string): Config =
   let host = config["host"].getStr()
   let token = config["token"].getStr()
 
+  # Validate host/token
   if host == "":
     echo "Error: 'host' is required in config file: ", configPath
     quit(1)
-
   if not isValidHost(host):
     echo "Error: Invalid host in config file: ", host
     quit(1)
-
   if token == "":
     echo "Error: 'token' is required in config file: ", configPath
     quit(1)
 
+  # Handle conn_mode (backwards compatibility)
+  var connMode: string
+  if config.hasKey("conn_mode"):
+    let connModeStr = config["conn_mode"].getStr()
+    if connModeStr notin ["http", "https"]:
+      echo "Error: Invalid conn_mode in config file: ", connModeStr
+      quit(1)
+    connMode = connModeStr
+  else:
+    let existingConfig = readFile(configPath)
+    let trimmedExisting =
+      existingConfig.strip(leading = true, trailing = false, chars = {'\n', '\r'})
+    let newConfig = "conn_mode = \"http\"\n" & trimmedExisting
+
+    let tmpPath = configPath & ".tmp"
+    try:
+      writeFile(tmpPath, newConfig)
+      moveFile(tmpPath, configPath)
+    except CatchableError:
+      if fileExists(tmpPath):
+        removeFile(tmpPath)
+      echo "Error: Failed to migrate existing config file: ", getCurrentExceptionMsg()
+      quit(1)
+    connMode = "http"
+
+  result.connMode = connMode
   result.host = host
   result.token = token
   result.port =
@@ -309,6 +353,7 @@ proc main() =
       echo "Error: Config file not found: ", configPath
       quit(1)
 
+  let connMode = config.connMode
   let host = config.host
   let port = config.port
   let token = config.token
@@ -322,8 +367,8 @@ proc main() =
       ""
 
   let statsEndpoint =
-    &"http://{host}:{port}/api/dashboard/stats/get?{queryType}token={token}"
-  let settingsEndpoint = &"http://{host}:{port}/api/settings/get?token={token}"
+    &"{connMode}://{host}:{port}/api/dashboard/stats/get?{queryType}token={token}"
+  let settingsEndpoint = &"{connMode}://{host}:{port}/api/settings/get?token={token}"
 
   let client = newHttpClient()
 
@@ -345,7 +390,7 @@ proc main() =
     let entriesBuffer = $(stats.totalRecursive + 1)
 
     let queryLogsEndpoint =
-      &"http://{host}:{port}/api/logs/query?name=Query%20Logs%20(Sqlite)" &
+      &"{connMode}://{host}:{port}/api/logs/query?name=Query%20Logs%20(Sqlite)" &
       &"&classPath=QueryLogsSqlite.App&responseType=Recursive&end={endTime}" &
       &"&entriesPerPage={entriesBuffer}&descendingOrder=true&token={token}"
 

@@ -1,5 +1,5 @@
 # Package
-version = "0.1.0"
+version = "0.2.0"
 author = "Shaun J. Clayton"
 description = "Simple statistics tool for Technitium DNS Server"
 license = "MIT"
@@ -13,6 +13,8 @@ requires "nim >= 2.2.10"
 requires "parsetoml >= 0.7.2"
 
 # Tasks
+task debug, "Build debug binary":
+  exec "nim c -d:ssl --outdir:" & binDir & " --out:" & binDir & "/nsstats nsstats.nim"
 task release, "Build release binary":
-  exec "nim c -d:release -d:strip --opt:size --panics:on --outdir:" & binDir & " --out:" &
-    binDir & "/nsstats nsstats.nim"
+  exec "nim c -d:release -d:strip -d:ssl --opt:size --panics:on --outdir:" & binDir &
+    " --out:" & binDir & "/nsstats nsstats.nim"
