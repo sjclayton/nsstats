@@ -441,9 +441,9 @@ proc main() =
 
       stabilityPenalty = max(0.0, meanRtt - medianRtt)
       healthStatus =
-        if stabilityPenalty < 10.0:
+        if stabilityPenalty < 15.0:
           rhOptimal
-        elif stabilityPenalty < 20.0:
+        elif stabilityPenalty < 25.0:
           rhFair
         else:
           rhDegraded

@@ -99,7 +99,7 @@ Generate an API token from the Technitium DNS Server web console under `Administ
 | **Total Queries**      | Total number of DNS queries processed (recursive/cached only)                           |
 | **Recursive Lookups**  | Queries requiring recursive resolution (with miss rate %)                               |
 | **Median/Avg/99% RTT** | Round-trip response time statistics (recursive lookups only)                            |
-| **Resolver Health**    | Optimal (<10ms), Fair (<20ms), or Degraded (your ISP connection's effect on resolution) |
+| **Resolver Health**    | Optimal (<15ms), Fair (<25ms), or Degraded (your ISP connection's effect on resolution) |
 | **Overall Impact**     | Average delay per lookup (weighted by recursive/total queries ratio)                    |
 | **Cached Responses**   | Responses served from the cache (with hit rate %)                                       |
 | **Cache Population**   | Ratio of cached entries to configured maximum cache size                                |
