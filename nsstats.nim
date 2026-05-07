@@ -53,6 +53,9 @@ const GreenRgb = (166, 227, 161)
 const YellowRgb = (249, 226, 175)
 const RedRgb = (243, 139, 168)
 
+func rgbToAnsi(rgb: tuple): string =
+  &"\e[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
+
 func colorize(
     value: float, cap: float = 100.0, direction: ColorDirection = cdGreenRed
 ): string =
@@ -82,21 +85,21 @@ func colorize(value: float, direction: ColorDirection): string =
 func getHealthStatus(status: ResolverHealth): (string, string) =
   case status
   of rhOptimal:
-    ("Optimal", &"\e[38;2;{GreenRgb[0]};{GreenRgb[1]};{GreenRgb[2]}m")
+    ("Optimal", rgbToAnsi(GreenRgb))
   of rhFair:
-    ("Fair", &"\e[38;2;{YellowRgb[0]};{YellowRgb[1]};{YellowRgb[2]}m")
+    ("Fair", rgbToAnsi(YellowRgb))
   of rhDegraded:
-    ("Degraded", &"\e[38;2;{RedRgb[0]};{RedRgb[1]};{RedRgb[2]}m")
+    ("Degraded", rgbToAnsi(RedRgb))
   of rhUnknown:
     ("N/A", "\e[0m")
 
 func getScoreRange(score: int): string =
   if score >= 75:
-    &"\e[38;2;{GreenRgb[0]};{GreenRgb[1]};{GreenRgb[2]}m"
+    rgbToAnsi(GreenRgb)
   elif score >= 50:
-    &"\e[38;2;{YellowRgb[0]};{YellowRgb[1]};{YellowRgb[2]}m"
+    rgbToAnsi(YellowRgb)
   else:
-    &"\e[38;2;{RedRgb[0]};{RedRgb[1]};{RedRgb[2]}m"
+    rgbToAnsi(RedRgb)
 
 func getConfigPath(altConfig: string = ""): string =
   if altConfig != "":
