@@ -44,14 +44,19 @@ type
     port: string
     token: string
 
+const
+  GreenRgb = (166, 227, 161)
+  YellowRgb = (249, 226, 175)
+  RedRgb = (243, 139, 168)
+  Labels = [
+    "Total Queries", "Recursive Lookups", "Med/Avg/99% RTT", "Resolver Health",
+    "Overall Impact", "Cached Responses", "Cache Population", "DNS Score",
+  ]
+
 func calculatePercent(part: int, total: int): float =
   if total > 0:
     return (float(part) / float(total)) * 100.0
   return 0.0
-
-const GreenRgb = (166, 227, 161)
-const YellowRgb = (249, 226, 175)
-const RedRgb = (243, 139, 168)
 
 func rgbToAnsi(rgb: tuple): string =
   &"\e[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
@@ -481,11 +486,6 @@ proc main() =
       dnsScore =
         (impactScore * 0.40) + (cacheScore * 0.35) + (tailScore * 0.15) +
         (populationScore * 0.10)
-
-    const Labels = [
-      "Total Queries", "Recursive Lookups", "Med/Avg/99% RTT", "Resolver Health",
-      "Overall Impact", "Cached Responses", "Cache Population", "DNS Score",
-    ]
 
     var maxWidth = 0
     for l in Labels:
