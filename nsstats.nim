@@ -56,17 +56,24 @@ const RedRgb = (243, 139, 168)
 func colorize(
     value: float, cap: float = 100.0, direction: ColorDirection = cdGreenRed
 ): string =
-  let (fromRgb, toRgb, effectiveCap) =
+  let effectiveCap =
     case direction
-    of cdGreenRed:
-      (GreenRgb, RedRgb, cap)
-    of cdRedGreen:
-      (RedRgb, GreenRgb, 100.0)
+    of cdGreenRed: cap
+    of cdRedGreen: 100.0
 
-  let normalized = clamp(value / effectiveCap, 0.0, 1.0)
-  let r = int(float(toRgb[0]) * normalized + float(fromRgb[0]) * (1.0 - normalized))
-  let g = int(float(toRgb[1]) * normalized + float(fromRgb[1]) * (1.0 - normalized))
-  let b = int(float(toRgb[2]) * normalized + float(fromRgb[2]) * (1.0 - normalized))
+  let t = clamp(value / effectiveCap, 0.0, 1.0)
+
+  var r, g, b: int
+
+  if direction == cdGreenRed:
+    r = int(clamp(-178.0 * t * t + 255.0 * t + 166.0, 0.0, 255.0))
+    g = int(clamp(-172.0 * t * t + 84.0 * t + 227.0, 0.0, 255.0))
+    b = int(clamp(-42.0 * t * t + 49.0 * t + 161.0, 0.0, 255.0))
+  else:
+    r = int(clamp(-178.0 * t * t + 101.0 * t + 243.0, 0.0, 255.0))
+    g = int(clamp(-172.0 * t * t + 260.0 * t + 139.0, 0.0, 255.0))
+    b = int(clamp(-42.0 * t * t + 35.0 * t + 168.0, 0.0, 255.0))
+
   return &"\e[38;2;{r};{g};{b}m"
 
 func colorize(value: float, direction: ColorDirection): string =
@@ -82,6 +89,14 @@ func getHealthStatus(status: ResolverHealth): (string, string) =
     ("Degraded", &"\e[38;2;{RedRgb[0]};{RedRgb[1]};{RedRgb[2]}m")
   of rhUnknown:
     ("N/A", "\e[0m")
+
+func getScoreRange(score: int): string =
+  if score >= 75:
+    &"\e[38;2;{GreenRgb[0]};{GreenRgb[1]};{GreenRgb[2]}m"
+  elif score >= 50:
+    &"\e[38;2;{YellowRgb[0]};{YellowRgb[1]};{YellowRgb[2]}m"
+  else:
+    &"\e[38;2;{RedRgb[0]};{RedRgb[1]};{RedRgb[2]}m"
 
 func getConfigPath(altConfig: string = ""): string =
   if altConfig != "":
@@ -526,8 +541,9 @@ proc main() =
 
     stdout.write align(Labels[7], maxWidth), ": "
     if hasRttValues:
-      let scoreColor = colorize(dnsScore, cdRedGreen)
-      stdout.write scoreColor, &"{int(round(dnsScore))}/100\e[0m\n"
+      let score = int(round(dnsScore))
+      let scoreColor = getScoreRange(score)
+      stdout.write scoreColor, &"{score}/100\e[0m\n"
     else:
       echo "N/A"
   except CatchableError:
