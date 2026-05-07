@@ -105,6 +105,10 @@ Generate an API token from the Technitium DNS Server web console under `Administ
 | **Cache Population**   | Ratio of cached entries to configured maximum cache size                                |
 | **DNS Score**          | Composite experience score (0-100) based on weighted metrics                            |
 
+## Contributing
+
+Anyone who wishes to contribute is welcome to open an issue or submit a pull request.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details
