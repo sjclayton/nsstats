@@ -351,7 +351,7 @@ proc main() =
         else:
           expectConfigValue = true
       of "v", "version":
-        echo &"nsstats version {Version}"
+        echo &"nsstats v{Version}"
         quit(0)
       of "h", "help":
         showHelp()
