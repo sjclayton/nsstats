@@ -52,6 +52,7 @@ const
     "Total Queries", "Recursive Lookups", "Med/Avg/99% RTT", "Resolver Health",
     "Overall Impact", "Cached Responses", "Cache Population", "DNS Score",
   ]
+  Version = staticExec("grep version *.nimble | cut -d'\"' -f2").strip()
 
 func calculatePercent(part: int, total: int): float =
   if total > 0:
@@ -321,6 +322,7 @@ Options:
   -d, --daily    Show daily stats (last 24 hours)
   -w, --weekly   Show weekly stats (last 7 days)
   -c, --config   Use an alternate config file (-c /path/to/config.toml)
+  -v, --version  Show current version
   -h, --help     Show this help message
 
 If no option is provided, shows current (last hour) stats.
@@ -348,6 +350,9 @@ proc main() =
           altConfig = val
         else:
           expectConfigValue = true
+      of "v", "version":
+        echo &"nsstats version {Version}"
+        quit(0)
       of "h", "help":
         showHelp()
         quit(0)
