@@ -155,7 +155,7 @@ Config file will be saved to: {configPath}
 """
 
   # Get connection mode
-  var connModeValid = false
+  var connModeValid: bool
   while not connModeValid:
     stdout.write "Choose connection mode (0 = http (default), 1 = https): "
     let input = stdin.readLine().strip()
@@ -171,7 +171,7 @@ Config file will be saved to: {configPath}
       echo "Error: Invalid connection mode. Must be 0 (http) or 1 (https)."
 
   # Get host
-  var hostValid = false
+  var hostValid: bool
   while not hostValid:
     stdout.write "Enter host (IP or FQDN): "
     let host = stdin.readLine().strip()
@@ -185,8 +185,8 @@ Config file will be saved to: {configPath}
     hostValid = true
 
   # Get port [optional]
-  var portValid = false
-  var port = ""
+  var portValid: bool
+  var port: string
   let defaultPort = if result.connMode == "https": "53443" else: "5380"
   while not portValid:
     stdout.write &"Enter port (default = {defaultPort}): "
@@ -201,7 +201,7 @@ Config file will be saved to: {configPath}
       echo "Error: Invalid port: Must be between 1-65535."
 
   # Get token
-  var tokenValid = false
+  var tokenValid: bool
   while not tokenValid:
     stdout.write "Enter API token: "
     let token = stdin.readLine().strip()
@@ -218,18 +218,26 @@ Config file will be saved to: {configPath}
 
 proc loadConfig(configPath: string): Config =
   let config = parsetoml.parseFile(configPath)
+
+  # Validate host/token
+  if not config.hasKey("host"):
+    echo "Error: 'host' is required in config file: ", configPath
+    quit(1)
+  if not config.hasKey("token"):
+    echo "Error: 'token' is required in config file: ", configPath
+    quit(1)
+
   let host = config["host"].getStr()
   let token = config["token"].getStr()
 
-  # Validate host/token
   if host == "":
-    echo "Error: 'host' is required in config file: ", configPath
+    echo "Error: 'host' is empty in config file: ", configPath
     quit(1)
   if not isValidHost(host):
     echo "Error: Invalid host in config file: ", host
     quit(1)
   if token == "":
-    echo "Error: 'token' is required in config file: ", configPath
+    echo "Error: 'token' is empty in config file: ", configPath
     quit(1)
 
   # Handle conn_mode (backwards compatibility)
@@ -262,14 +270,14 @@ proc loadConfig(configPath: string): Config =
   result.token = token
   result.port =
     if config.hasKey("port"):
-      let p = config["port"].getStr()
-      if isValidPort(p):
-        p
+      let port = config["port"].getStr()
+      if isValidPort(port):
+        port
       else:
-        echo "Error: Invalid port in config file: ", p
+        echo "Error: Invalid port in config file: ", port
         quit(1)
     else:
-      "5380"
+      if connMode == "https": "53443" else: "5380"
 
 proc validateApiResponse(
     respStatus: string, respError: Option[string], apiName: string
@@ -321,10 +329,10 @@ First run will prompt to create a config in $XDG_CONFIG_HOME/nsstats/config.toml
 """
 
 proc main() =
-  var isDaily = false
-  var isWeekly = false
-  var altConfig = ""
-  var expectConfigValue = false
+  var isDaily: bool
+  var isWeekly: bool
+  var altConfig: string
+  var expectConfigValue: bool
   var parser = initOptParser()
 
   for kind, key, val in parser.getopt():
@@ -402,7 +410,7 @@ proc main() =
       fetchApi[ApiResponse[Settings]](client, settingsEndpoint, "settings").response
 
     let now = getTime().utc
-    var endTime = ""
+    var endTime: string
     if isDaily:
       endTime = now.format("yyyy-MM-dd'T'HH") & ":00:00Z"
     elif isWeekly:
@@ -420,7 +428,7 @@ proc main() =
     let logs =
       fetchApi[ApiResponse[QueryLogsData]](client, queryLogsEndpoint, "logs").response
 
-    var rttValues: seq[float] = @[]
+    var rttValues: seq[float]
     for entry in logs.entries:
       if entry.responseRtt.isSome():
         rttValues.add(entry.responseRtt.get())
@@ -437,13 +445,13 @@ proc main() =
     let cachePopulation =
       calculatePercent(stats.cachedEntries, settings.cacheMaximumEntries)
 
-    var medianRtt = 0.0
-    var meanRtt = 0.0
-    var p99Rtt = 0.0
-    var stabilityPenalty = 0.0
+    var medianRtt: float
+    var meanRtt: float
+    var p99Rtt: float
+    var stabilityPenalty: float
     var healthStatus = rhUnknown
-    var overallImpact = 0.0
-    var dnsScore = 0.0
+    var overallImpact: float
+    var dnsScore: float
 
     if hasRttValues:
       rttValues.sort()
@@ -454,7 +462,7 @@ proc main() =
         else:
           (rttValues[mid - 1] + rttValues[mid]) / 2.0
 
-      var sumRtt = 0.0
+      var sumRtt: float
       for v in rttValues:
         sumRtt += v
       meanRtt = sumRtt / float(rttValues.len)
@@ -487,7 +495,7 @@ proc main() =
         (impactScore * 0.40) + (cacheScore * 0.35) + (tailScore * 0.15) +
         (populationScore * 0.10)
 
-    var maxWidth = 0
+    var maxWidth: int
     for l in Labels:
       maxWidth = max(maxWidth, l.len + 2)
 
