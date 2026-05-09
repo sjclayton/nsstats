@@ -71,6 +71,7 @@ Options:
   -d, --daily    Show daily stats (last 24 hours)
   -w, --weekly   Show weekly stats (last 7 days)
   -c, --config   Use an alternate config file (-c /path/to/config.toml)
+  -v, --version  Show current version
   -h, --help     Show this help message
 ```
 
