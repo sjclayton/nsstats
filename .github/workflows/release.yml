@@ -16,11 +16,10 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: google-github-actions/release-please-action@v4
+      - uses: googleapis/release-please-action@v4
         id: release
         with:
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
+          release-type: simple
 
   build-and-release:
     needs: release-please
@@ -30,6 +29,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Sync Nimble Version
+        run: |
+          VERSION=${{ needs.release-please.outputs.tag_name }}
+          VERSION=${VERSION#v}
+          sed -i "s/version *= *\".*\"/version = \"$VERSION\"/" nsstats.nimble
+
       - name: Install Nim
         uses: jiro4989/setup-nim-action@v2
         with:
@@ -37,14 +42,12 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Release
-        run: |
-          nimble release -y
+        run: nimble release -y
 
       - name: Upload Binaries to Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.release-please.outputs.tag_name }}
-          files: |
-            bin/nsstats
+          files: bin/nsstats
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

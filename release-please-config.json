@@ -1,9 +1,7 @@
 {
   "packages": {
     ".": {
-      "release-type": "nim",
-      "package-name": "nsstats",
-      "changelog-path": "CHANGELOG.md"
+      "release-type": "simple"
     }
   }
 }
