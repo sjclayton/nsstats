@@ -328,26 +328,23 @@ var spinnerLock: Lock
 var spinnerDone: bool
 
 proc runSpinner() {.thread.} =
-  sleep(500)
-  acquire(spinnerLock)
-  let shouldRun = not spinnerDone
-  release(spinnerLock)
-  if not shouldRun:
-    return
   let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+  let start = epochTime()
+  var shown = false
   var i = 0
   while true:
     acquire(spinnerLock)
     if spinnerDone:
       release(spinnerLock)
-      break
+      return
     release(spinnerLock)
-    stdout.write("\r" & frames[i mod frames.len] & " Fetching data...")
-    stdout.flushFile()
+    if not shown and (epochTime() - start) * 1000 >= 500:
+      shown = true
+    if shown:
+      stdout.write("\r" & frames[i mod frames.len] & " Fetching data...")
+      stdout.flushFile()
+      inc i
     sleep(80)
-    inc i
-  stdout.write("\r\e[K")
-  stdout.flushFile()
 
 proc getResolverInfo(
     client: AsyncHttpClient, endpointUrl: string, targetType: string
@@ -767,8 +764,6 @@ proc main() =
     acquire(spinnerLock)
     spinnerDone = true
     release(spinnerLock)
-    joinThread(spinnerThread)
-    deinitLock(spinnerLock)
     client.close()
 
 main()
