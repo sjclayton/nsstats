@@ -28,12 +28,23 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Sync Nimble Version
+      - name: Bump Version (.nimble)
         run: |
           VERSION=${{ needs.release-please.outputs.tag_name }}
           VERSION=${VERSION#v}
-          sed -i "s/version *= *\".*\"/version = \"$VERSION\"/" nsstats.nimble
+
+          # Force bump the version
+          sed -i "s/version[[:space:]]*=[[:space:]]*\".*\"/version = \"$VERSION\"/" nsstats.nimble
+
+          # Commit the change back to the main branch so the repo is in sync
+          git config user.name github-actions[bot]
+          git config user.email github-actions[bot]@users.noreply.github.com
+          git add nsstats.nimble
+          git commit -m "chore: update nimble version to $VERSION [skip ci]"
+          git push
 
       - name: Install Nim
         uses: jiro4989/setup-nim-action@v2
