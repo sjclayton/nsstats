@@ -1,5 +1,5 @@
 # Package
-version = "0.2.2"
+version = "0.3.0"
 author = "Shaun J. Clayton"
 description = "Simple statistics tool for Technitium DNS Server"
 license = "MIT"
