@@ -83,9 +83,6 @@ Options:
   -h, --help     Show this help message
 ```
 
-Extra metrics are disabled by default, enable them with extra_metrics = true in your config file, or
-display them temporarily with -x/--extra.
-
 ## Configuration
 
 Configuration is stored in TOML format at:
