@@ -1,7 +1,7 @@
 import
   std/[
     httpclient, json, strutils, strformat, parseopt, options, times, math, algorithm,
-    os, net,
+    os, net, asyncdispatch, tables, sequtils, locks,
   ],
   parsetoml
 
@@ -17,7 +17,14 @@ type
   Settings = object
     cacheMaximumEntries: int
 
+  ResolverResult = object
+    resolver: string
+    ip: string
+    protocol: string
+
   QueryLogEntry = object
+    qname: string
+    qtype: string
     responseRtt: Option[float]
 
   QueryLogsData = object
@@ -43,6 +50,7 @@ type
     host: string
     port: string
     token: string
+    extraMetrics: bool
 
 const
   GreenRgb = (166, 227, 161)
@@ -50,7 +58,16 @@ const
   RedRgb = (243, 139, 168)
   Labels = [
     "Total Queries", "Recursive Lookups", "Med/Avg/99% RTT", "Resolver Health",
-    "Overall Impact", "Cached Responses", "Cache Population", "DNS Score",
+    "Most Used Resolver", "Overall Impact", "Cached Responses", "Cache Population",
+    "DNS Score",
+  ]
+  PrettyNamePatterns = [
+    ("cloudflare", "Cloudflare"),
+    ("google", "Google"),
+    ("quad9", "Quad9"),
+    ("opendns", "OpenDNS"),
+    ("adguard", "AdGuard"),
+    ("joindns4", "DNS4EU"),
   ]
   Version = staticExec("grep version *.nimble | cut -d'\"' -f2").strip()
 
@@ -107,6 +124,24 @@ func getScoreRange(score: int): string =
   else:
     rgbToAnsi(RedRgb)
 
+func getPrettyName(resolver: string): string =
+  let r = resolver.toLowerAscii()
+  for (pattern, name) in PrettyNamePatterns:
+    if r.contains(pattern):
+      return name
+  resolver
+
+func getPrettyProto(protocol: string): string =
+  let p = protocol.toLowerAscii()
+  if p.contains("quic"):
+    rgbToAnsi(GreenRgb) & "DoQ\e[0m"
+  elif p.contains("https"):
+    rgbToAnsi(GreenRgb) & "DoH\e[0m"
+  elif p.contains("tls"):
+    rgbToAnsi(YellowRgb) & "DoT\e[0m"
+  else:
+    rgbToAnsi(RedRgb) & protocol.toUpperAscii() & "\e[0m"
+
 func getConfigPath(altConfig: string = ""): string =
   if altConfig != "":
     altConfig
@@ -146,6 +181,7 @@ conn_mode = "{config.connMode}"
 host = "{config.host}"
 port = "{config.port}"
 token = "{config.token}"
+extra_metrics = {config.extraMetrics}
 """
   writeFile(configPath, tomlContent)
 
@@ -212,6 +248,9 @@ Config file will be saved to: {configPath}
     result.token = token
     tokenValid = true
 
+  # Extra metrics disabled by default
+  result.extraMetrics = false
+
   saveConfig(result, configPath)
   echo ""
   echo "Configuration saved successfully."
@@ -268,7 +307,6 @@ proc loadConfig(configPath: string): Config =
 
   result.connMode = connMode
   result.host = host
-  result.token = token
   result.port =
     if config.hasKey("port"):
       let port = config["port"].getStr()
@@ -279,6 +317,79 @@ proc loadConfig(configPath: string): Config =
         quit(1)
     else:
       if connMode == "https": "53443" else: "5380"
+  result.token = token
+  result.extraMetrics =
+    if config.hasKey("extra_metrics"):
+      config["extra_metrics"].getBool()
+    else:
+      false
+
+var spinnerLock: Lock
+var spinnerDone: bool
+
+proc runSpinner() {.thread.} =
+  sleep(500)
+  acquire(spinnerLock)
+  let shouldRun = not spinnerDone
+  release(spinnerLock)
+  if not shouldRun:
+    return
+  let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+  var i = 0
+  while true:
+    acquire(spinnerLock)
+    if spinnerDone:
+      release(spinnerLock)
+      break
+    release(spinnerLock)
+    stdout.write("\r" & frames[i mod frames.len] & " Fetching data...")
+    stdout.flushFile()
+    sleep(80)
+    inc i
+  stdout.write("\r\e[K")
+  stdout.flushFile()
+
+proc getResolverInfo(
+    client: AsyncHttpClient, endpointUrl: string, targetType: string
+): Future[ResolverResult] {.async.} =
+  try:
+    let resp = await client.get(endpointUrl)
+    let body = await resp.body
+    let jsonNode = parseJson(body)
+    if jsonNode["status"].getStr == "ok":
+      let records = jsonNode["response"]["records"]
+      for rec in records:
+        if (rec["type"].getStr == targetType or records.len == 1) and
+            rec.hasKey("responseMetadata"):
+          let meta = rec["responseMetadata"]
+          let rawName = meta["nameServer"].getStr
+          let idx = rawName.find(" (")
+          let name =
+            if idx >= 0:
+              rawName[0 ..< idx]
+            else:
+              rawName
+          let ip =
+            if idx >= 0:
+              rawName[idx + 2 .. ^2].strip()
+            else:
+              "N/A"
+          return
+            ResolverResult(resolver: name, ip: ip, protocol: meta["protocol"].getStr)
+  except:
+    discard
+  return ResolverResult(resolver: "Unknown", ip: "N/A", protocol: "N/A")
+
+proc processClientQueries(
+    client: AsyncHttpClient,
+    queries: seq[tuple[name: string, qtype: string]],
+    connMode, host, port, token: string,
+): Future[Table[string, ResolverResult]] {.async.} =
+  result = initTable[string, ResolverResult]()
+  for q in queries:
+    let url = &"{connMode}://{host}:{port}/api/cache/list?domain={q.name}&token={token}"
+    let key = &"{q.name}|{q.qtype}"
+    result[key] = await getResolverInfo(client, url, q.qtype)
 
 proc validateApiResponse(
     respStatus: string, respError: Option[string], apiName: string
@@ -301,8 +412,8 @@ proc validateApiResponse(
     echo &"Error: Unknown status '{respStatus}' from {apiName} request"
     quit(1)
 
-proc fetchApi[T](client: HttpClient, url: string, label: string): T =
-  let jsonNode = parseJson(client.getContent(url))
+proc fetchApi[T](client: HttpClient, endpointUrl: string, apiName: string): T =
+  let jsonNode = parseJson(client.getContent(endpointUrl))
 
   let status = jsonNode["status"].getStr()
   let errorMsg =
@@ -311,7 +422,7 @@ proc fetchApi[T](client: HttpClient, url: string, label: string): T =
     else:
       none(string)
 
-  validateApiResponse(status, errorMsg, label)
+  validateApiResponse(status, errorMsg, apiName)
   return jsonNode.to(T)
 
 proc showHelp() =
@@ -321,11 +432,15 @@ Usage: nsstats [OPTIONS]
 Options:
   -d, --daily    Show daily stats (last 24 hours)
   -w, --weekly   Show weekly stats (last 7 days)
+  -x, --extra    Show extra metrics (Resolver Health, Most Used Resolver)
   -c, --config   Use an alternate config file (-c /path/to/config.toml)
   -v, --version  Show current version
   -h, --help     Show this help message
 
 If no option is provided, shows current (last hour) stats.
+
+Extra metrics are disabled by default, enable them with extra_metrics = true in your config file, or
+display them temporarily with -x/--extra.
 
 First run will prompt to create a config in $XDG_CONFIG_HOME/nsstats/config.toml, if one doesn't already exist.
 """
@@ -333,6 +448,7 @@ First run will prompt to create a config in $XDG_CONFIG_HOME/nsstats/config.toml
 proc main() =
   var isDaily: bool
   var isWeekly: bool
+  var extraMetrics: bool
   var altConfig: string
   var expectConfigValue: bool
   var parser = initOptParser()
@@ -350,6 +466,8 @@ proc main() =
           altConfig = val
         else:
           expectConfigValue = true
+      of "x", "extra":
+        extraMetrics = true
       of "v", "version":
         echo &"nsstats v{Version}"
         quit(0)
@@ -393,6 +511,7 @@ proc main() =
   let host = config.host
   let port = config.port
   let token = config.token
+  extraMetrics = extraMetrics or config.extraMetrics
 
   let queryType =
     if isDaily:
@@ -407,6 +526,11 @@ proc main() =
   let settingsEndpoint = &"{connMode}://{host}:{port}/api/settings/get?token={token}"
 
   let client = newHttpClient()
+
+  initLock(spinnerLock)
+  spinnerDone = false
+  var spinnerThread: Thread[void]
+  createThread(spinnerThread, runSpinner)
 
   try:
     let stats =
@@ -444,6 +568,51 @@ proc main() =
     )
     let hasRttValues = rttValues.len > 0
 
+    var resolverCounts = initCountTable[string]()
+
+    if extraMetrics:
+      var uniqueQueries: seq[tuple[name: string, qtype: string]]
+
+      for entry in logs.entries:
+        if entry.responseRtt.isSome():
+          let pair = (name: entry.qname, qtype: entry.qtype)
+          if pair notin uniqueQueries:
+            uniqueQueries.add(pair)
+
+      var lookupMap = initTable[string, ResolverResult]()
+
+      if hasRttValues:
+        const NumClients = 20
+        let clients = newSeqWith(NumClients, newAsyncHttpClient())
+        var clientQueries = newSeq[seq[tuple[name: string, qtype: string]]](NumClients)
+
+        for i, q in uniqueQueries:
+          clientQueries[i mod NumClients].add(q)
+
+        var clientFuts: seq[Future[Table[string, ResolverResult]]]
+        for i in 0 ..< NumClients:
+          if clientQueries[i].len > 0:
+            clientFuts.add processClientQueries(
+              clients[i], clientQueries[i], connMode, host, port, token
+            )
+
+        let allTables = waitFor all(clientFuts)
+        for t in allTables:
+          for key, val in t:
+            lookupMap[key] = val
+
+        for c in clients:
+          c.close()
+
+        for entry in logs.entries:
+          if entry.responseRtt.isSome():
+            let key = &"{entry.qname}|{entry.qtype}"
+            if lookupMap.hasKey(key) and lookupMap[key].resolver != "Unknown":
+              let res = lookupMap[key]
+              resolverCounts.inc(&"{res.resolver}|{res.ip}|{res.protocol}")
+
+      resolverCounts.sort()
+
     let totalQueries = stats.totalCached + stats.totalRecursive
     let hitRate = calculatePercent(stats.totalCached, totalQueries)
     let missRate = 100.0 - hitRate
@@ -475,14 +644,15 @@ proc main() =
       let p99Index = int(ceil(0.99 * float(rttValues.len))) - 1
       p99Rtt = rttValues[clamp(p99Index, 0, rttValues.len - 1)]
 
-      stabilityPenalty = max(0.0, meanRtt - medianRtt)
-      healthStatus =
-        if stabilityPenalty < 15.0:
-          rhOptimal
-        elif stabilityPenalty < 25.0:
-          rhFair
-        else:
-          rhDegraded
+      if extraMetrics:
+        stabilityPenalty = max(0.0, meanRtt - medianRtt)
+        healthStatus =
+          if stabilityPenalty < 15.0:
+            rhOptimal
+          elif stabilityPenalty < 25.0:
+            rhFair
+          else:
+            rhDegraded
 
       let recursiveWeight = float(stats.totalRecursive) / float(totalQueries)
       overallImpact = meanRtt * recursiveWeight
@@ -500,6 +670,10 @@ proc main() =
         (impactScore * 0.40) + (cacheScore * 0.35) + (tailScore * 0.15) +
         (populationScore * 0.10)
 
+    acquire(spinnerLock)
+    spinnerDone = true
+    release(spinnerLock)
+
     var maxWidth: int
     for l in Labels:
       maxWidth = max(maxWidth, l.len + 2)
@@ -511,7 +685,8 @@ proc main() =
         "Weekly DNS Statistics"
       else:
         "Hourly DNS Statistics"
-    let headerWidth = 53
+    let headerWidth = 55
+    stdout.write("\e[2K\r")
     echo center(title, headerWidth)
     echo repeat("-", headerWidth)
 
@@ -534,28 +709,48 @@ proc main() =
     else:
       echo "N/A"
 
-    stdout.write align(Labels[3], maxWidth), ": "
-    let (healthLabel, healthColor) = getHealthStatus(healthStatus)
-    stdout.write healthColor, healthLabel, "\e[0m\n"
+    if extraMetrics:
+      stdout.write align(Labels[3], maxWidth), ": "
+      let (healthLabel, healthColor) = getHealthStatus(healthStatus)
+      stdout.write healthColor, healthLabel, "\e[0m\n"
 
-    stdout.write align(Labels[4], maxWidth), ": "
+      if resolverCounts.len > 0:
+        let (topResolver, _) = resolverCounts.largest()
+        let sep = topResolver.split("|")
+        var resolver = sep[0]
+        let ip =
+          if sep.len > 1:
+            sep[1]
+          else:
+            "N/A"
+        var proto =
+          if sep.len > 2:
+            sep[2]
+          else:
+            "N/A"
+        resolver = getPrettyName(resolver)
+        proto = getPrettyProto(proto)
+        stdout.write align(Labels[4], maxWidth), ": "
+        stdout.write &"{resolver} ({ip}) via {proto}", "\n"
+
+    stdout.write align(Labels[5], maxWidth), ": "
     if hasRttValues:
       let impactColor = colorize(overallImpact, 20.0)
       stdout.write impactColor, &"{overallImpact:.2f}ms\e[0m (avg delay/lookup)\n"
     else:
       echo "N/A"
 
-    stdout.write align(Labels[5], maxWidth),
+    stdout.write align(Labels[6], maxWidth),
       ": ", insertSep($stats.totalCached, ',', 3), " ("
     let hitRateColor = colorize(hitRate, cdRedGreen)
     stdout.write hitRateColor, &"{hitRate:.1f}%\e[0m)\n"
 
-    stdout.write align(Labels[6], maxWidth), ": "
+    stdout.write align(Labels[7], maxWidth), ": "
     let cachePopColor = colorize(cachePopulation)
     stdout.write &"{stats.cachedEntries}/{settings.cacheMaximumEntries} ("
     stdout.write cachePopColor, &"{cachePopulation:.1f}%\e[0m)\n\n"
 
-    stdout.write align(Labels[7], maxWidth), ": "
+    stdout.write align(Labels[8], maxWidth), ": "
     if hasRttValues:
       let score = int(round(dnsScore))
       let scoreColor = getScoreRange(score)
@@ -563,8 +758,17 @@ proc main() =
     else:
       echo "N/A"
   except CatchableError:
+    acquire(spinnerLock)
+    spinnerDone = true
+    release(spinnerLock)
+    stdout.write("\e[2K\r")
     echo "Error: ", getCurrentExceptionMsg()
   finally:
+    acquire(spinnerLock)
+    spinnerDone = true
+    release(spinnerLock)
+    joinThread(spinnerThread)
+    deinitLock(spinnerLock)
     client.close()
 
 main()

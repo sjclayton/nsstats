@@ -7,11 +7,10 @@ A simple terminal-based DNS statistics viewer for [Technitium DNS Server](https:
 ## Features
 
 - **Live DNS statistics** displayed in a dynamically colorized terminal interface
-- **Time range selection** - View hourly (updated minutely), daily (updated hourly), or weekly (updated daily) statistics
+- **Time range selection** — View hourly (updated minutely), daily (updated hourly), or weekly (updated daily) statistics
 - **Performance metrics** including recursive response times (median, average, 99th percentile)
-- **Resolver health indicator** - Shows the performance of your configured resolver based on your Internet connection
 - **Cache efficiency tracking** with hit/miss rates and population stats
-- **DNS Score** - Composite experience score (0-100) based on multiple metrics, gives you an at-a-glance idea of your DNS performance
+- **DNS Score** — Composite experience score (0-100) based on multiple metrics, gives you an at-a-glance idea of your DNS performance
 - **First-run configuration wizard** for easy setup
 
 ## Requirements
@@ -70,10 +69,14 @@ Usage: nsstats [OPTIONS]
 Options:
   -d, --daily    Show daily stats (last 24 hours)
   -w, --weekly   Show weekly stats (last 7 days)
+  -x, --extra    Show extra metrics (Resolver Health, Most Used Resolver)
   -c, --config   Use an alternate config file (-c /path/to/config.toml)
   -v, --version  Show current version
   -h, --help     Show this help message
 ```
+
+Extra metrics are disabled by default, enable them with extra_metrics = true in your config file, or
+display them temporarily with -x/--extra.
 
 ## Configuration
 
@@ -89,22 +92,33 @@ conn_mode = "http" # Options: "http", "https"
 host = "192.168.1.1"
 port = "5380" # Defaults: HTTP -> 5380, HTTPS -> 53443
 token = "your-api-token-here"
+extra_metrics = false # Show extra metrics (Resolver Health, Most Used Resolver)
 ```
 
 Generate an API token from the Technitium DNS Server web console under `Administration > Sessions`.
 
 ## Displayed Metrics
 
+### Core Metrics
+
+| Metric                 | Description                                                          |
+| ---------------------- | -------------------------------------------------------------------- |
+| **Total Queries**      | Total number of DNS queries processed (recursive/cached only)        |
+| **Recursive Lookups**  | Queries requiring recursive resolution (with miss rate %)            |
+| **Median/Avg/99% RTT** | Round-trip response time statistics (recursive lookups only)         |
+| **Overall Impact**     | Average delay per lookup (weighted by recursive/total queries ratio) |
+| **Cached Responses**   | Responses served from the cache (with hit rate %)                    |
+| **Cache Population**   | Ratio of cached entries to configured maximum cache size             |
+| **DNS Score**          | Composite experience score (0-100) based on weighted metrics         |
+
+### Extra Metrics
+
+The following metrics require `-x`/`--extra` or `extra_metrics = true` in your config file:
+
 | Metric                 | Description                                                                             |
 | ---------------------- | --------------------------------------------------------------------------------------- |
-| **Total Queries**      | Total number of DNS queries processed (recursive/cached only)                           |
-| **Recursive Lookups**  | Queries requiring recursive resolution (with miss rate %)                               |
-| **Median/Avg/99% RTT** | Round-trip response time statistics (recursive lookups only)                            |
 | **Resolver Health**    | Optimal (<15ms), Fair (<25ms), or Degraded (your ISP connection's effect on resolution) |
-| **Overall Impact**     | Average delay per lookup (weighted by recursive/total queries ratio)                    |
-| **Cached Responses**   | Responses served from the cache (with hit rate %)                                       |
-| **Cache Population**   | Ratio of cached entries to configured maximum cache size                                |
-| **DNS Score**          | Composite experience score (0-100) based on weighted metrics                            |
+| **Most Used Resolver** | Upstream resolver with highest query count - shows name, IP, and protocol in use        |
 
 ## Contributing
 
