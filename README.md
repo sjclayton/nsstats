@@ -2,7 +2,15 @@
 
 A simple terminal-based DNS statistics viewer for [Technitium DNS Server](https://technitium.com/dns/), written in Nim.
 
+## Screenshots
+
+**Core Metrics (default)**
+
 ![nsstats screenshot](images/nsstats_screenshot.png)
+
+**w/Extra Metrics**
+
+![nsstats screenshot2](images/nsstats_screenshot2.png)
 
 ## Features
 
@@ -118,7 +126,7 @@ The following metrics require `-x`/`--extra` or `extra_metrics = true` in your c
 | Metric                 | Description                                                                             |
 | ---------------------- | --------------------------------------------------------------------------------------- |
 | **Resolver Health**    | Optimal (<15ms), Fair (<25ms), or Degraded (your ISP connection's effect on resolution) |
-| **Most Used Resolver** | Upstream resolver with highest query count - shows name, IP, and protocol in use        |
+| **Most Used Resolver** | Upstream resolver with highest response rate - shows name, IP, and protocol in use      |
 
 ## Contributing
 
