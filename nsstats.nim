@@ -1,7 +1,7 @@
 import
   std/[
     httpclient, json, strutils, strformat, parseopt, options, times, math, algorithm,
-    os, net, asyncdispatch, tables, sequtils, locks,
+    os, net, asyncdispatch, tables, sets, sequtils, locks,
   ],
   parsetoml
 
@@ -30,7 +30,7 @@ type
   QueryLogsData = object
     entries: seq[QueryLogEntry]
 
-  ApiResponse*[T] = object
+  ApiResponse[T] = object
     status: string
     errorMessage: Option[string]
     response: T
@@ -522,7 +522,7 @@ proc main() =
     &"{connMode}://{host}:{port}/api/dashboard/stats/get?{queryType}token={token}"
   let settingsEndpoint = &"{connMode}://{host}:{port}/api/settings/get?token={token}"
 
-  let client = newHttpClient()
+  let client = newHttpClient(timeout = 10_000)
 
   initLock(spinnerLock)
   spinnerDone = false
@@ -568,13 +568,12 @@ proc main() =
     var resolverCounts = initCountTable[string]()
 
     if extraMetrics:
-      var uniqueQueries: seq[tuple[name: string, qtype: string]]
+      var uniqueQueries: HashSet[tuple[name: string, qtype: string]]
 
       for entry in logs.entries:
         if entry.responseRtt.isSome():
           let pair = (name: entry.qname, qtype: entry.qtype)
-          if pair notin uniqueQueries:
-            uniqueQueries.add(pair)
+          uniqueQueries.incl(pair)
 
       var lookupMap = initTable[string, ResolverResult]()
 
@@ -583,8 +582,10 @@ proc main() =
         let clients = newSeqWith(NumClients, newAsyncHttpClient())
         var clientQueries = newSeq[seq[tuple[name: string, qtype: string]]](NumClients)
 
-        for i, q in uniqueQueries:
+        var i = 0
+        for q in uniqueQueries:
           clientQueries[i mod NumClients].add(q)
+          inc i
 
         var clientFuts: seq[Future[Table[string, ResolverResult]]]
         for i in 0 ..< NumClients:
@@ -677,12 +678,12 @@ proc main() =
 
     let title =
       if isDaily:
-        "Daily DNS Statistics "
+        "Daily DNS Statistics"
       elif isWeekly:
         "Weekly DNS Statistics"
       else:
         "Hourly DNS Statistics"
-    let headerWidth = 55
+    let headerWidth = 60
     stdout.write("\e[2K\r")
     echo center(title, headerWidth)
     echo repeat("-", headerWidth)
@@ -761,9 +762,6 @@ proc main() =
     stdout.write("\e[2K\r")
     echo "Error: ", getCurrentExceptionMsg()
   finally:
-    acquire(spinnerLock)
-    spinnerDone = true
-    release(spinnerLock)
     client.close()
 
 main()
