@@ -578,7 +578,7 @@ proc main() =
 
     var resolverCounts: CountTable[string]
 
-    if extraMetrics:
+    if extraMetrics and hasRttValues:
       var uniqueDomains: HashSet[string]
 
       for entry in logs.entries:
@@ -588,55 +588,47 @@ proc main() =
       var lookupMap:
         Table[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]
 
-      if hasRttValues:
-        const NumClients = 20
-        let clients = newSeqWith(NumClients, newAsyncHttpClient())
-        var clientDomains = newSeq[seq[string]](NumClients)
+      const NumClients = 20
+      let clients = newSeqWith(NumClients, newAsyncHttpClient())
+      var clientDomains = newSeq[seq[string]](NumClients)
 
-        var i = 0
-        for domain in uniqueDomains:
-          clientDomains[i mod NumClients].add(domain)
-          inc i
+      var i = 0
+      for domain in uniqueDomains:
+        clientDomains[i mod NumClients].add(domain)
+        inc i
 
-        var clientFuts: seq[
-          Future[
-            Table[
-              string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]
-            ]
-          ]
+      var clientFuts: seq[
+        Future[
+          Table[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]
         ]
-        for i in 0 ..< NumClients:
-          if clientDomains[i].len > 0:
-            clientFuts.add processDomains(
-              clients[i], clientDomains[i], connMode, host, port, token
-            )
+      ]
+      for i in 0 ..< NumClients:
+        if clientDomains[i].len > 0:
+          clientFuts.add processDomains(
+            clients[i], clientDomains[i], connMode, host, port, token
+          )
 
-        let allTables = waitFor all(clientFuts)
-        for t in allTables:
-          for key, val in t:
-            lookupMap[key] = val
+      let allTables = waitFor all(clientFuts)
+      for t in allTables:
+        for key, val in t:
+          lookupMap[key] = val
 
-        for c in clients:
-          c.close()
+      for c in clients:
+        c.close()
 
-        for entry in logs.entries:
-          if entry.responseRtt.isSome():
-            if lookupMap.hasKey(entry.qname):
-              let data = lookupMap[entry.qname]
+      for entry in logs.entries:
+        if entry.responseRtt.isSome():
+          lookupMap.withValue(entry.qname, data):
+            var targets = data[].recs.getOrDefault(entry.qtype)
+            if targets.len == 0 and data[].rawCount == 1:
+              # Fallback: if only one record exists in a given cache entry, attribute to it
+              for v in data[].recs.values:
+                targets = v
+                break
 
-              var targets: seq[ResolverResult]
-              if data.recs.hasKey(entry.qtype):
-                targets = data.recs[entry.qtype]
-              elif data.rawCount == 1:
-                # Fallback: if only one record exists in a given cache entry, attribute to it
-                for v in data.recs.values:
-                  targets = v
-                  break
-
-              if targets.len > 0:
-                let res = targets[0]
-                let key = &"{res.resolver}|{res.ip}|{res.protocol}"
-                resolverCounts.inc(key)
+            if targets.len > 0:
+              let res = targets[0]
+              resolverCounts.inc(&"{res.resolver}|{res.ip}|{res.protocol}")
 
       resolverCounts.sort()
 
