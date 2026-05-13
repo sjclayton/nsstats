@@ -387,13 +387,14 @@ proc getCacheRecords(
     discard
 
 proc processDomains(
-    client: AsyncHttpClient,
-    domains: seq[string],
-    connMode, host, port, token: string,
-): Future[Table[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]] {.async.} =
+    client: AsyncHttpClient, domains: seq[string], connMode, host, port, token: string
+): Future[Table[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]] {.
+    async
+.} =
   ## Processes each domain found in query logs (recursive lookups only), returning a nested structure:
   ## domain -> (record type -> seq[ResolverResult], rawCount)
-  result = initTable[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]()
+  result =
+    initTable[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]()
   for domain in domains:
     let url = &"{connMode}://{host}:{port}/api/cache/list?domain={domain}&token={token}"
     result[domain] = await getCacheRecords(client, url)
@@ -584,7 +585,8 @@ proc main() =
         if entry.responseRtt.isSome():
           uniqueDomains.incl(entry.qname)
 
-      var lookupMap: Table[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]
+      var lookupMap:
+        Table[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]
 
       if hasRttValues:
         const NumClients = 20
@@ -596,8 +598,13 @@ proc main() =
           clientDomains[i mod NumClients].add(domain)
           inc i
 
-        var clientFuts:
-          seq[Future[Table[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]]]
+        var clientFuts: seq[
+          Future[
+            Table[
+              string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]
+            ]
+          ]
+        ]
         for i in 0 ..< NumClients:
           if clientDomains[i].len > 0:
             clientFuts.add processDomains(
@@ -616,7 +623,7 @@ proc main() =
           if entry.responseRtt.isSome():
             if lookupMap.hasKey(entry.qname):
               let data = lookupMap[entry.qname]
-              
+
               var targets: seq[ResolverResult]
               if data.recs.hasKey(entry.qtype):
                 targets = data.recs[entry.qtype]
@@ -625,21 +632,13 @@ proc main() =
                 for v in data.recs.values:
                   targets = v
                   break
-              
+
               if targets.len > 0:
                 let res = targets[0]
                 let key = &"{res.resolver}|{res.ip}|{res.protocol}"
                 resolverCounts.inc(key)
 
       resolverCounts.sort()
-      
-      stderr.writeLine "\n--- DEBUG: Resolver Totals ---"
-      var debugTotal = 0
-      for key, count in resolverCounts:
-        stderr.writeLine &"  {key}: {count}"
-        debugTotal += count
-      stderr.writeLine &"\n  Total: {debugTotal}"
-      stderr.writeLine "------------------------------\n"
 
     let totalQueries = stats.totalCached + stats.totalRecursive
     let hitRate = calculatePercent(stats.totalCached, totalQueries)
