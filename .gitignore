@@ -1,2 +1,7 @@
 # Build output directory
 bin/
+
+# Nimble stuff
+nimble.develop
+nimble.paths
+nimbledeps

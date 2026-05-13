@@ -131,14 +131,17 @@ func getPrettyName(resolver: string): string =
       return name
   resolver
 
-func getPrettyProto(protocol: string): string =
+func getPrettyProto(resolver, protocol: string): string =
+  let r = resolver.toLowerAscii()
   let p = protocol.toLowerAscii()
   if p.contains("quic"):
     rgbToAnsi(GreenRgb) & "DoQ\e[0m"
+  elif p.contains("https") and r.contains("h3"):
+    rgbToAnsi(GreenRgb) & "DoH3\e[0m"
   elif p.contains("https"):
     rgbToAnsi(GreenRgb) & "DoH\e[0m"
   elif p.contains("tls"):
-    rgbToAnsi(YellowRgb) & "DoT\e[0m"
+    rgbToAnsi(GreenRgb) & "DoT\e[0m"
   else:
     rgbToAnsi(RedRgb) & protocol.toUpperAscii() & "\e[0m"
 
@@ -346,18 +349,22 @@ proc runSpinner() {.thread.} =
       inc i
     sleep(80)
 
-proc getResolverInfo(
-    client: AsyncHttpClient, endpointUrl: string, targetType: string
-): Future[ResolverResult] {.async.} =
+proc getCacheRecords(
+    client: AsyncHttpClient, endpointUrl: string
+): Future[tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]] {.async.} =
+  ## Fetches all cache records for a given domain, grouped by record type.
+  result.recs = initTable[string, seq[ResolverResult]]()
+  result.rawCount = 0
   try:
     let resp = await client.get(endpointUrl)
     let body = await resp.body
     let jsonNode = parseJson(body)
     if jsonNode["status"].getStr == "ok":
       let records = jsonNode["response"]["records"]
+      result.rawCount = records.len
       for rec in records:
-        if (rec["type"].getStr == targetType or records.len == 1) and
-            rec.hasKey("responseMetadata"):
+        if rec.hasKey("responseMetadata"):
+          let recType = rec["type"].getStr
           let meta = rec["responseMetadata"]
           let rawName = meta["nameServer"].getStr
           let idx = rawName.find(" (")
@@ -371,22 +378,25 @@ proc getResolverInfo(
               rawName[idx + 2 .. ^2].strip()
             else:
               "N/A"
-          return
+          let rr =
             ResolverResult(resolver: name, ip: ip, protocol: meta["protocol"].getStr)
+          if not result.recs.hasKey(recType):
+            result.recs[recType] = @[]
+          result.recs[recType].add(rr)
   except:
     discard
-  return ResolverResult(resolver: "Unknown", ip: "N/A", protocol: "N/A")
 
-proc processClientQueries(
+proc processDomains(
     client: AsyncHttpClient,
-    queries: seq[tuple[name: string, qtype: string]],
+    domains: seq[string],
     connMode, host, port, token: string,
-): Future[Table[string, ResolverResult]] {.async.} =
-  result = initTable[string, ResolverResult]()
-  for q in queries:
-    let url = &"{connMode}://{host}:{port}/api/cache/list?domain={q.name}&token={token}"
-    let key = &"{q.name}|{q.qtype}"
-    result[key] = await getResolverInfo(client, url, q.qtype)
+): Future[Table[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]] {.async.} =
+  ## Processes each domain found in query logs (recursive lookups only), returning a nested structure:
+  ## domain -> (record type -> seq[ResolverResult], rawCount)
+  result = initTable[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]()
+  for domain in domains:
+    let url = &"{connMode}://{host}:{port}/api/cache/list?domain={domain}&token={token}"
+    result[domain] = await getCacheRecords(client, url)
 
 proc validateApiResponse(
     respStatus: string, respError: Option[string], apiName: string
@@ -565,33 +575,33 @@ proc main() =
     )
     let hasRttValues = rttValues.len > 0
 
-    var resolverCounts = initCountTable[string]()
+    var resolverCounts: CountTable[string]
 
     if extraMetrics:
-      var uniqueQueries: HashSet[tuple[name: string, qtype: string]]
+      var uniqueDomains: HashSet[string]
 
       for entry in logs.entries:
         if entry.responseRtt.isSome():
-          let pair = (name: entry.qname, qtype: entry.qtype)
-          uniqueQueries.incl(pair)
+          uniqueDomains.incl(entry.qname)
 
-      var lookupMap = initTable[string, ResolverResult]()
+      var lookupMap: Table[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]
 
       if hasRttValues:
         const NumClients = 20
         let clients = newSeqWith(NumClients, newAsyncHttpClient())
-        var clientQueries = newSeq[seq[tuple[name: string, qtype: string]]](NumClients)
+        var clientDomains = newSeq[seq[string]](NumClients)
 
         var i = 0
-        for q in uniqueQueries:
-          clientQueries[i mod NumClients].add(q)
+        for domain in uniqueDomains:
+          clientDomains[i mod NumClients].add(domain)
           inc i
 
-        var clientFuts: seq[Future[Table[string, ResolverResult]]]
+        var clientFuts:
+          seq[Future[Table[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]]]
         for i in 0 ..< NumClients:
-          if clientQueries[i].len > 0:
-            clientFuts.add processClientQueries(
-              clients[i], clientQueries[i], connMode, host, port, token
+          if clientDomains[i].len > 0:
+            clientFuts.add processDomains(
+              clients[i], clientDomains[i], connMode, host, port, token
             )
 
         let allTables = waitFor all(clientFuts)
@@ -604,10 +614,25 @@ proc main() =
 
         for entry in logs.entries:
           if entry.responseRtt.isSome():
-            let key = &"{entry.qname}|{entry.qtype}"
-            if lookupMap.hasKey(key) and lookupMap[key].resolver != "Unknown":
-              let res = lookupMap[key]
-              resolverCounts.inc(&"{res.resolver}|{res.ip}|{res.protocol}")
+            if lookupMap.hasKey(entry.qname):
+              let data = lookupMap[entry.qname]
+              
+              var targets: seq[ResolverResult]
+              if data.recs.hasKey(entry.qtype):
+                targets = data.recs[entry.qtype]
+              elif data.rawCount == 1:
+                # Fallback: if only one record exists in cache, attribute to it
+                for v in data.recs.values:
+                  targets = v
+                  break
+              
+              if targets.len > 0:
+                var seen: HashSet[string]
+                for res in targets:
+                  let key = &"{res.resolver}|{res.ip}|{res.protocol}"
+                  if key notin seen:
+                    seen.incl(key)
+                    resolverCounts.inc(key)
 
       resolverCounts.sort()
 
@@ -726,8 +751,8 @@ proc main() =
             sep[2]
           else:
             "N/A"
+        proto = getPrettyProto(resolver, proto)
         resolver = getPrettyName(resolver)
-        proto = getPrettyProto(proto)
         stdout.write align(Labels[4], maxWidth), ": "
         stdout.write &"{resolver} ({ip}) via {proto}", "\n"
 
