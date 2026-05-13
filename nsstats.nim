@@ -621,20 +621,25 @@ proc main() =
               if data.recs.hasKey(entry.qtype):
                 targets = data.recs[entry.qtype]
               elif data.rawCount == 1:
-                # Fallback: if only one record exists in cache, attribute to it
+                # Fallback: if only one record exists in a given cache entry, attribute to it
                 for v in data.recs.values:
                   targets = v
                   break
               
               if targets.len > 0:
-                var seen: HashSet[string]
-                for res in targets:
-                  let key = &"{res.resolver}|{res.ip}|{res.protocol}"
-                  if key notin seen:
-                    seen.incl(key)
-                    resolverCounts.inc(key)
+                let res = targets[0]
+                let key = &"{res.resolver}|{res.ip}|{res.protocol}"
+                resolverCounts.inc(key)
 
       resolverCounts.sort()
+      
+      stderr.writeLine "\n--- DEBUG: Resolver Totals ---"
+      var debugTotal = 0
+      for key, count in resolverCounts:
+        stderr.writeLine &"  {key}: {count}"
+        debugTotal += count
+      stderr.writeLine &"\n  Total: {debugTotal}"
+      stderr.writeLine "------------------------------\n"
 
     let totalQueries = stats.totalCached + stats.totalRecursive
     let hitRate = calculatePercent(stats.totalCached, totalQueries)
