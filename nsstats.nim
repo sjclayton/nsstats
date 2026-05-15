@@ -62,12 +62,12 @@ const
     "DNS Score",
   ]
   PrettyNamePatterns = [
-    ("cloudflare", "Cloudflare"),
-    ("google", "Google"),
-    ("quad9", "Quad9"),
-    ("opendns", "OpenDNS"),
     ("adguard", "AdGuard"),
+    ("cloudflare", "Cloudflare"),
     ("joindns4", "DNS4EU"),
+    ("google", "Google"),
+    ("opendns", "OpenDNS"),
+    ("quad9", "Quad9"),
   ]
   Version = staticExec("grep version *.nimble | cut -d'\"' -f2").strip()
 
@@ -392,7 +392,7 @@ proc processDomains(
     async
 .} =
   ## Processes each domain found in query logs (recursive lookups only), returning a nested structure:
-  ## domain -> (record type -> seq[ResolverResult], rawCount)
+  ## domain -> (record type -> seq [ResolverResult], rawCount)
   result =
     initTable[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]()
   for domain in domains:
@@ -590,11 +590,11 @@ proc main() =
 
       const NumClients = 20
       let clients = newSeqWith(NumClients, newAsyncHttpClient())
-      var clientDomains = newSeq[seq[string]](NumClients)
+      var domainsToProcess = newSeq[seq[string]](NumClients)
 
       var i = 0
       for domain in uniqueDomains:
-        clientDomains[i mod NumClients].add(domain)
+        domainsToProcess[i mod NumClients].add(domain)
         inc i
 
       var clientFuts: seq[
@@ -603,9 +603,9 @@ proc main() =
         ]
       ]
       for i in 0 ..< NumClients:
-        if clientDomains[i].len > 0:
+        if domainsToProcess[i].len > 0:
           clientFuts.add processDomains(
-            clients[i], clientDomains[i], connMode, host, port, token
+            clients[i], domainsToProcess[i], connMode, host, port, token
           )
 
       let allTables = waitFor all(clientFuts)
