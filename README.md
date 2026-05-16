@@ -30,6 +30,7 @@ A simple terminal-based DNS statistics viewer for [Technitium DNS Server](https:
   - `Dashboard:View`
   - `Settings:View`
   - `Logs:View`
+  - `Cache:View` (only needed for extra metrics, used by the most used resolver metric)
 
 ## Installation
 

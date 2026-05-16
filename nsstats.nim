@@ -447,7 +447,7 @@ Options:
 
 If no option is provided, shows current (last hour) stats.
 
-Extra metrics are disabled by default, enable them with extra_metrics = true in your config file, or
+Extra metrics are disabled by default, enable them with `extra_metrics = true` in your config file, or
 display them temporarily with -x/--extra.
 
 First run will prompt to create a config in $XDG_CONFIG_HOME/nsstats/config.toml, if one doesn't already exist.
