@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.4](https://github.com/sjclayton/nsstats/compare/v0.3.3...v0.3.4) (2026-05-16)
+
+
+### Performance Improvements
+
+* optimize resolver lookup by reducing redundant table searches ([69e142e](https://github.com/sjclayton/nsstats/commit/69e142e415c05d6fa3a8244f149ca98ba30042ea))
+
 ## [0.3.3](https://github.com/sjclayton/nsstats/compare/v0.3.2...v0.3.3) (2026-05-13)
 
 
