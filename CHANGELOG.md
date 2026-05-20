@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.4](https://github.com/sjclayton/nsstats/compare/v0.3.3...v0.3.4) (2026-05-20)
+
+
+### Bug Fixes
+
+* `recursiveWeight` now uses true recursive count (upstream only) ([e261eeb](https://github.com/sjclayton/nsstats/commit/e261eebaac59031322193f1c98be22d9a8ebb5cc))
+
+
+### Performance Improvements
+
+* optimize resolver lookup by reducing redundant table searches ([69e142e](https://github.com/sjclayton/nsstats/commit/69e142e415c05d6fa3a8244f149ca98ba30042ea))
+
 ## [0.3.3](https://github.com/sjclayton/nsstats/compare/v0.3.2...v0.3.3) (2026-05-13)
 
 
