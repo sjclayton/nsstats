@@ -27,6 +27,11 @@ type
     qtype: string
     responseRtt: Option[float]
 
+  RecursiveEntry = object
+    qname: string
+    qtype: string
+    rtt: float
+
   QueryLogsData = object
     entries: seq[QueryLogEntry]
 
@@ -565,25 +570,31 @@ proc main() =
     let logs =
       fetchApi[ApiResponse[QueryLogsData]](client, queryLogsEndpoint, "logs").response
 
-    var rttValues: seq[float]
+    var recursiveEntries: seq[RecursiveEntry]
     for entry in logs.entries:
       if entry.responseRtt.isSome():
-        rttValues.add(entry.responseRtt.get())
+        recursiveEntries.add(
+          RecursiveEntry(
+            qname: entry.qname, qtype: entry.qtype, rtt: entry.responseRtt.get()
+          )
+        )
+    let hasRecursiveQueries = recursiveEntries.len > 0
 
     assert(
-      rttValues.len <= parseInt(entriesBuffer),
-      &"entriesBuffer overflow: got: {rttValues.len} values, want: <={entriesBuffer}",
+      recursiveEntries.len <= parseInt(entriesBuffer),
+      &"entriesBuffer overflow: got: {recursiveEntries.len} values, want: <={entriesBuffer}",
     )
-    let hasRttValues = rttValues.len > 0
+
+    var rttValues: seq[float]
+    for entry in recursiveEntries:
+      rttValues.add(entry.rtt)
 
     var resolverCounts: CountTable[string]
 
-    if extraMetrics and hasRttValues:
+    if extraMetrics and hasRecursiveQueries:
       var uniqueDomains: HashSet[string]
-
-      for entry in logs.entries:
-        if entry.responseRtt.isSome():
-          uniqueDomains.incl(entry.qname)
+      for entry in recursiveEntries:
+        uniqueDomains.incl(entry.qname)
 
       var lookupMap:
         Table[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]
@@ -616,28 +627,28 @@ proc main() =
       for c in clients:
         c.close()
 
-      for entry in logs.entries:
-        if entry.responseRtt.isSome():
-          lookupMap.withValue(entry.qname, data):
-            var targets = data[].recs.getOrDefault(entry.qtype)
-            if targets.len == 0 and data[].rawCount == 1:
-              # Fallback: if only one record exists in a given cache entry, attribute to it
-              for v in data[].recs.values:
-                targets = v
-                break
+      for entry in recursiveEntries:
+        lookupMap.withValue(entry.qname, data):
+          var targets = data[].recs.getOrDefault(entry.qtype)
+          if targets.len == 0 and data[].rawCount == 1:
+            # Fallback: if only one record exists in a given cache entry, attribute to it
+            for v in data[].recs.values:
+              targets = v
+              break
 
-            if targets.len > 0:
-              let res = targets[0]
-              resolverCounts.inc(&"{res.resolver}|{res.ip}|{res.protocol}")
+          if targets.len > 0:
+            let res = targets[0]
+            resolverCounts.inc(&"{res.resolver}|{res.ip}|{res.protocol}")
 
       resolverCounts.sort()
 
-    let totalQueries = stats.totalCached + stats.totalRecursive
+    let totalQueries = stats.totalRecursive + stats.totalCached
     let hitRate = calculatePercent(stats.totalCached, totalQueries)
     let missRate = 100.0 - hitRate
     let cachePopulation =
       calculatePercent(stats.cachedEntries, settings.cacheMaximumEntries)
 
+    let trueRecursive = recursiveEntries.len
     var medianRtt: float
     var meanRtt: float
     var p99Rtt: float
@@ -646,7 +657,7 @@ proc main() =
     var overallImpact: float
     var dnsScore: float
 
-    if hasRttValues:
+    if hasRecursiveQueries:
       rttValues.sort()
       let mid = rttValues.len div 2
       medianRtt =
@@ -673,7 +684,7 @@ proc main() =
           else:
             rhDegraded
 
-      let recursiveWeight = float(stats.totalRecursive) / float(totalQueries)
+      let recursiveWeight = float(trueRecursive) / float(totalQueries)
       overallImpact = meanRtt * recursiveWeight
 
       let impactScore = 100.0 - clamp((overallImpact / 20.0) * 100.0, 0.0, 100.0)
@@ -717,7 +728,7 @@ proc main() =
     stdout.write missRateColor, &"{missRate:.1f}%\e[0m)\n"
 
     stdout.write align(Labels[2], maxWidth), ": "
-    if hasRttValues:
+    if hasRecursiveQueries:
       let medColor = colorize(medianRtt, 100.0)
       let meanColor = colorize(meanRtt, 100.0)
       let p99Color = colorize(p99Rtt, 300.0)
@@ -753,7 +764,7 @@ proc main() =
         stdout.write &"{resolver} ({ip}) via {proto}", "\n"
 
     stdout.write align(Labels[5], maxWidth), ": "
-    if hasRttValues:
+    if hasRecursiveQueries:
       let impactColor = colorize(overallImpact, 20.0)
       stdout.write impactColor, &"{overallImpact:.2f}ms\e[0m (avg delay/lookup)\n"
     else:
@@ -765,12 +776,12 @@ proc main() =
     stdout.write hitRateColor, &"{hitRate:.1f}%\e[0m)\n"
 
     stdout.write align(Labels[7], maxWidth), ": "
-    let cachePopColor = colorize(cachePopulation)
+    let cachePopColor = colorize(cachePopulation, 90.0)
     stdout.write &"{stats.cachedEntries}/{settings.cacheMaximumEntries} ("
     stdout.write cachePopColor, &"{cachePopulation:.1f}%\e[0m)\n\n"
 
     stdout.write align(Labels[8], maxWidth), ": "
-    if hasRttValues:
+    if hasRecursiveQueries:
       let score = int(round(dnsScore))
       let scoreColor = getScoreRange(score)
       stdout.write scoreColor, &"{score}/100\e[0m\n"
