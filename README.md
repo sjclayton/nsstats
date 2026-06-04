@@ -121,10 +121,10 @@ Generate an API token from the Technitium DNS Server web console under `Administ
 
 The following metrics require `-x`/`--extra` or `extra_metrics = true` in your config file:
 
-| Metric                 | Description                                                                             |
-| ---------------------- | --------------------------------------------------------------------------------------- |
-| **Resolver Health**    | Optimal (<15ms), Fair (<25ms), or Degraded (your ISP connection's effect on resolution) |
-| **Most Used Resolver** | Upstream resolver with highest response rate - shows name, IP, and protocol in use      |
+| Metric                 | Description                                                                        |
+| ---------------------- | ---------------------------------------------------------------------------------- |
+| **Jitter**             | Network conditions current effect on upstream resolution (displayed with RTT's)    |
+| **Most Used Resolver** | Upstream resolver with highest response rate - shows name, IP, and protocol in use |
 
 ## Contributing
 
