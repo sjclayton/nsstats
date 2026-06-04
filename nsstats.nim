@@ -375,7 +375,7 @@ proc getCacheRecords(
     discard
 
 proc processDomains(
-    client: AsyncHttpClient, domains: seq[string], connMode, host, port, token: string
+    client: AsyncHttpClient, domains: seq[string], connMode, host, port: string
 ): Future[Table[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]] {.
     async
 .} =
@@ -384,7 +384,7 @@ proc processDomains(
   result =
     initTable[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]()
   for domain in domains:
-    let url = &"{connMode}://{host}:{port}/api/cache/list?domain={domain}&token={token}"
+    let url = &"{connMode}://{host}:{port}/api/cache/list?domain={domain}"
     result[domain] = await getCacheRecords(client, url)
 
 proc validateApiResponse(
@@ -511,17 +511,18 @@ proc main() =
 
   let queryType =
     if isDaily:
-      "type=LastDay&"
+      "type=LastDay"
     elif isWeekly:
-      "type=LastWeek&"
+      "type=LastWeek"
     else:
       ""
 
   let statsEndpoint =
-    &"{connMode}://{host}:{port}/api/dashboard/stats/get?{queryType}token={token}"
-  let settingsEndpoint = &"{connMode}://{host}:{port}/api/settings/get?token={token}"
+    &"{connMode}://{host}:{port}/api/dashboard/stats/get?{queryType}"
+  let settingsEndpoint = &"{connMode}://{host}:{port}/api/settings/get"
 
   let client = newHttpClient(timeout = 10_000)
+  client.headers["Authorization"] = "Bearer " & token
 
   initLock(spinnerLock)
   spinnerDone = false
@@ -548,7 +549,7 @@ proc main() =
     let queryLogsEndpoint =
       &"{connMode}://{host}:{port}/api/logs/query?name=Query%20Logs%20(Sqlite)" &
       &"&classPath=QueryLogsSqlite.App&responseType=Recursive&end={endTime}" &
-      &"&entriesPerPage={entriesBuffer}&descendingOrder=true&token={token}"
+      &"&entriesPerPage={entriesBuffer}&descendingOrder=true"
 
     let logs =
       fetchApi[ApiResponse[QueryLogsData]](client, queryLogsEndpoint, "logs").response
@@ -583,7 +584,10 @@ proc main() =
         Table[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]
 
       const NumClients = 20
-      let clients = newSeqWith(NumClients, newAsyncHttpClient())
+      let clients = newSeqWith(NumClients, block:
+        let c = newAsyncHttpClient()
+        c.headers["Authorization"] = "Bearer " & token
+        c)
       var domainsToProcess = newSeq[seq[string]](NumClients)
 
       var i = 0
@@ -599,7 +603,7 @@ proc main() =
       for i in 0 ..< NumClients:
         if domainsToProcess[i].len > 0:
           clientFuts.add processDomains(
-            clients[i], domainsToProcess[i], connMode, host, port, token
+            clients[i], domainsToProcess[i], connMode, host, port
           )
 
       let allTables = waitFor all(clientFuts)
