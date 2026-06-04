@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/sjclayton/nsstats/compare/v0.3.4...v0.4.0) (2026-06-04)
+
+
+### Features
+
+* Left-align title and show connected servers hostname in header ([db55f28](https://github.com/sjclayton/nsstats/commit/db55f288b21ba32fa0ca5d5d38bc615e57b60726))
+* Show actual jitter value in Extra Metrics (replaces Resolver Health) ([b6b123c](https://github.com/sjclayton/nsstats/commit/b6b123c79c721b22487b18ec7a606a0a1fbd1f54))
+
 ## [0.3.4](https://github.com/sjclayton/nsstats/compare/v0.3.3...v0.3.4) (2026-05-20)
 
 
