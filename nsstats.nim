@@ -517,8 +517,7 @@ proc main() =
     else:
       ""
 
-  let statsEndpoint =
-    &"{connMode}://{host}:{port}/api/dashboard/stats/get?{queryType}"
+  let statsEndpoint = &"{connMode}://{host}:{port}/api/dashboard/stats/get?{queryType}"
   let settingsEndpoint = &"{connMode}://{host}:{port}/api/settings/get"
 
   let client = newHttpClient(timeout = 10_000)
@@ -584,10 +583,13 @@ proc main() =
         Table[string, tuple[recs: Table[string, seq[ResolverResult]], rawCount: int]]
 
       const NumClients = 20
-      let clients = newSeqWith(NumClients, block:
-        let c = newAsyncHttpClient()
-        c.headers["Authorization"] = "Bearer " & token
-        c)
+      let clients = newSeqWith(
+        NumClients,
+        block:
+          let c = newAsyncHttpClient()
+          c.headers["Authorization"] = "Bearer " & token
+          c,
+      )
       var domainsToProcess = newSeq[seq[string]](NumClients)
 
       var i = 0
@@ -687,7 +689,7 @@ proc main() =
     for l in Labels:
       maxWidth = max(maxWidth, l.len + 2)
 
-    let title =
+    let titleStr =
       if isDaily:
         "Daily DNS Statistics"
       elif isWeekly:
@@ -697,7 +699,18 @@ proc main() =
 
     let headerWidth = if extraMetrics: 67 else: 60
     stdout.write("\e[2K\r")
-    echo center(title, headerWidth)
+
+    let padding = 2
+    let serverLabel = "Server: "
+    var displayHost = host
+    let maxHostLen = headerWidth - padding * 2 - titleStr.len - serverLabel.len
+    if displayHost.len > maxHostLen:
+      displayHost = host[0 ..< max(1, maxHostLen - 1)] & "…"
+    stdout.write(
+      repeat(" ", padding) & titleStr & repeat(" ", maxHostLen - displayHost.len) &
+        serverLabel & "\e[1m" & displayHost & "\e[0m" & repeat(" ", padding) & "\n"
+    )
+
     echo repeat("-", headerWidth)
 
     echo align(Labels[0], maxWidth), ": ", insertSep($totalQueries, ',', 3)
