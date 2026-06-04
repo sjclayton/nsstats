@@ -17,20 +17,10 @@ type
   Settings = object
     cacheMaximumEntries: int
 
-  ResolverResult = object
-    resolver: string
-    ip: string
-    protocol: string
-
   QueryLogEntry = object
     qname: string
     qtype: string
     responseRtt: Option[float]
-
-  RecursiveEntry = object
-    qname: string
-    qtype: string
-    rtt: float
 
   QueryLogsData = object
     entries: seq[QueryLogEntry]
@@ -40,15 +30,15 @@ type
     errorMessage: Option[string]
     response: T
 
-  ResolverHealth = enum
-    rhUnknown
-    rhOptimal
-    rhFair
-    rhDegraded
+  RecursiveEntry = object
+    qname: string
+    qtype: string
+    rtt: float
 
-  ColorDirection = enum
-    cdGreenRed
-    cdRedGreen
+  ResolverResult = object
+    resolver: string
+    ip: string
+    protocol: string
 
   Config = object
     connMode: string
@@ -57,14 +47,18 @@ type
     token: string
     extraMetrics: bool
 
+  ColorDirection = enum
+    cdGreenRed
+    cdRedGreen
+
 const
   GreenRgb = (166, 227, 161)
   YellowRgb = (249, 226, 175)
   RedRgb = (243, 139, 168)
   Labels = [
-    "Total Queries", "Recursive Lookups", "Med/Avg/99% RTT", "Resolver Health",
-    "Most Used Resolver", "Overall Impact", "Cached Responses", "Cache Population",
-    "DNS Score",
+    "Total Queries", "Recursive Lookups", "RTT - Med/Avg/99%",
+    "RTT - Med/Avg/99%/Jitter", "Most Used Resolver", "Overall Impact",
+    "Cached Responses", "Cache Population", "DNS Score",
   ]
   PrettyNamePatterns = [
     ("adguard", "AdGuard"),
@@ -109,17 +103,6 @@ func colorize(
 
 func colorize(value: float, direction: ColorDirection): string =
   colorize(value, 100.0, direction)
-
-func getHealthStatus(status: ResolverHealth): (string, string) =
-  case status
-  of rhOptimal:
-    ("Optimal", rgbToAnsi(GreenRgb))
-  of rhFair:
-    ("Fair", rgbToAnsi(YellowRgb))
-  of rhDegraded:
-    ("Degraded", rgbToAnsi(RedRgb))
-  of rhUnknown:
-    ("N/A", "\e[0m")
 
 func getScoreRange(score: int): string =
   if score >= 75:
@@ -560,7 +543,7 @@ proc main() =
     else:
       endTime = now.format("yyyy-MM-dd'T'HH:mm") & ":00Z"
 
-    let entriesBuffer = $(stats.totalRecursive + 1)
+    let entriesBuffer = $(stats.totalRecursive)
 
     let queryLogsEndpoint =
       &"{connMode}://{host}:{port}/api/logs/query?name=Query%20Logs%20(Sqlite)" &
@@ -652,8 +635,7 @@ proc main() =
     var medianRtt: float
     var meanRtt: float
     var p99Rtt: float
-    var stabilityPenalty: float
-    var healthStatus = rhUnknown
+    var jitter: float
     var overallImpact: float
     var dnsScore: float
 
@@ -675,14 +657,7 @@ proc main() =
       p99Rtt = rttValues[clamp(p99Index, 0, rttValues.len - 1)]
 
       if extraMetrics:
-        stabilityPenalty = max(0.0, meanRtt - medianRtt)
-        healthStatus =
-          if stabilityPenalty < 15.0:
-            rhOptimal
-          elif stabilityPenalty < 25.0:
-            rhFair
-          else:
-            rhDegraded
+        jitter = max(0.0, meanRtt - medianRtt)
 
       let recursiveWeight = float(trueRecursive) / float(totalQueries)
       overallImpact = meanRtt * recursiveWeight
@@ -715,7 +690,8 @@ proc main() =
         "Weekly DNS Statistics"
       else:
         "Hourly DNS Statistics"
-    let headerWidth = 60
+
+    let headerWidth = if extraMetrics: 67 else: 60
     stdout.write("\e[2K\r")
     echo center(title, headerWidth)
     echo repeat("-", headerWidth)
@@ -727,23 +703,27 @@ proc main() =
     let missRateColor = colorize(missRate)
     stdout.write missRateColor, &"{missRate:.1f}%\e[0m)\n"
 
-    stdout.write align(Labels[2], maxWidth), ": "
+    if not extraMetrics:
+      stdout.write align(Labels[2], maxWidth), ": "
+    else:
+      stdout.write align(Labels[3], maxWidth), ": "
     if hasRecursiveQueries:
       let medColor = colorize(medianRtt, 100.0)
       let meanColor = colorize(meanRtt, 100.0)
       let p99Color = colorize(p99Rtt, 300.0)
+      let jitterColor = colorize(jitter, 20.0)
 
-      stdout.write medColor, &"{medianRtt:.2f}ms\e[0m / "
-      stdout.write meanColor, &"{meanRtt:.2f}ms\e[0m / "
-      stdout.write p99Color, &"{p99Rtt:.2f}ms\e[0m\n"
+      stdout.write medColor, &"{medianRtt:.1f}ms\e[0m / "
+      stdout.write meanColor, &"{meanRtt:.1f}ms\e[0m / "
+      stdout.write p99Color, &"{p99Rtt:.1f}ms\e[0m"
+      if extraMetrics:
+        stdout.write " / ", jitterColor, &"{jitter:.1f}ms\e[0m\n"
+      else:
+        echo ""
     else:
       echo "N/A"
 
     if extraMetrics:
-      stdout.write align(Labels[3], maxWidth), ": "
-      let (healthLabel, healthColor) = getHealthStatus(healthStatus)
-      stdout.write healthColor, healthLabel, "\e[0m\n"
-
       if resolverCounts.len > 0:
         let (topResolver, _) = resolverCounts.largest()
         let sep = topResolver.split("|")
@@ -766,7 +746,7 @@ proc main() =
     stdout.write align(Labels[5], maxWidth), ": "
     if hasRecursiveQueries:
       let impactColor = colorize(overallImpact, 20.0)
-      stdout.write impactColor, &"{overallImpact:.2f}ms\e[0m (avg delay/lookup)\n"
+      stdout.write impactColor, &"{overallImpact:.1f}ms\e[0m (avg delay/lookup)\n"
     else:
       echo "N/A"
 
