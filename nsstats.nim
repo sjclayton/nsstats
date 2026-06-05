@@ -1,7 +1,7 @@
 import
   std/[
     httpclient, json, strutils, strformat, parseopt, options, times, math, algorithm,
-    os, net, asyncdispatch, tables, sets, sequtils, locks,
+    os, net, asyncdispatch, tables, sets, sequtils, locks, terminal,
   ],
   parsetoml
 
@@ -46,6 +46,8 @@ type
     port: string
     token: string
     extraMetrics: bool
+    insecure: bool
+    caCert: string
 
   ColorDirection = enum
     cdGreenRed
@@ -68,7 +70,14 @@ const
     ("opendns", "OpenDNS"),
     ("quad9", "Quad9"),
   ]
-  Version = staticExec("grep version *.nimble | cut -d'\"' -f2").strip()
+proc getVersion(): string {.compileTime.} =
+  let content = staticRead("nsstats.nimble")
+  for line in content.splitLines():
+    if line.startsWith("version"):
+      return line.split("=")[1].strip().strip(chars = {'"'})
+  return "unknown"
+
+const Version = getVersion()
 
 func calculatePercent(part: int, total: int): float =
   if total > 0:
@@ -133,7 +142,7 @@ func getPrettyProto(resolver, protocol: string): string =
   else:
     rgbToAnsi(RedRgb) & protocol.toUpperAscii() & "\e[0m"
 
-func getConfigPath(altConfig: string = ""): string =
+proc getConfigPath(altConfig: string = ""): string =
   if altConfig != "":
     altConfig
   else:
@@ -173,6 +182,8 @@ host = "{config.host}"
 port = "{config.port}"
 token = "{config.token}"
 extra_metrics = {config.extraMetrics}
+insecure = {config.insecure}
+ca_cert = "{config.caCert}"
 """
   writeFile(configPath, tomlContent)
 
@@ -314,6 +325,16 @@ proc loadConfig(configPath: string): Config =
       config["extra_metrics"].getBool()
     else:
       false
+  result.insecure =
+    if config.hasKey("insecure"):
+      config["insecure"].getBool()
+    else:
+      false
+  result.caCert =
+    if config.hasKey("ca_cert"):
+      config["ca_cert"].getStr()
+    else:
+      ""
 
 var spinnerLock: Lock
 var spinnerDone: bool
@@ -429,6 +450,7 @@ Options:
   -d, --daily    Show daily stats (last 24 hours)
   -w, --weekly   Show weekly stats (last 7 days)
   -x, --extra    Show extra metrics (Resolver Health, Most Used Resolver)
+  -k, --insecure Allow insecure SSL connections (skip certificate verification)
   -c, --config   Use an alternate config file (-c /path/to/config.toml)
   -v, --version  Show current version
   -h, --help     Show this help message
@@ -442,9 +464,15 @@ First run will prompt to create a config in $XDG_CONFIG_HOME/nsstats/config.toml
 """
 
 proc main() =
+  when defined(windows):
+    # This enables Virtual Terminal processing on Windows 10+
+    # Nim's terminal module handles this initialization when used.
+    if stdout.isatty:
+      discard terminal.terminalWidth()
   var isDaily: bool
   var isWeekly: bool
   var extraMetrics: bool
+  var insecure: bool
   var altConfig: string
   var expectConfigValue: bool
   var parser = initOptParser()
@@ -508,6 +536,7 @@ proc main() =
   let port = config.port
   let token = config.token
   extraMetrics = extraMetrics or config.extraMetrics
+  insecure = insecure or config.insecure
 
   let queryType =
     if isDaily:
@@ -520,7 +549,15 @@ proc main() =
   let statsEndpoint = &"{connMode}://{host}:{port}/api/dashboard/stats/get?{queryType}"
   let settingsEndpoint = &"{connMode}://{host}:{port}/api/settings/get"
 
-  let client = newHttpClient(timeout = 10_000)
+  let sslContext =
+    if insecure:
+      newContext(verifyMode = CVerifyNone)
+    elif config.caCert != "":
+      newContext(caFile = config.caCert, verifyMode = CVerifyPeer)
+    else:
+      nil
+
+  let client = newHttpClient(timeout = 10_000, sslContext = sslContext)
   client.headers["Authorization"] = "Bearer " & token
 
   initLock(spinnerLock)
@@ -586,7 +623,7 @@ proc main() =
       let clients = newSeqWith(
         NumClients,
         block:
-          let c = newAsyncHttpClient()
+          let c = newAsyncHttpClient(sslContext = sslContext)
           c.headers["Authorization"] = "Bearer " & token
           c,
       )

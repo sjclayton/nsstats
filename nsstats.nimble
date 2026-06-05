@@ -9,7 +9,7 @@ bin = @["nsstats"]
 binDir = "bin"
 
 # Dependencies
-requires "nim >= 2.2.10"
+requires "nim >= 2.0.8"
 requires "parsetoml >= 0.7.2"
 
 # Tasks
