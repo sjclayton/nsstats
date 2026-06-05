@@ -23,7 +23,7 @@ A simple terminal-based DNS statistics viewer for [Technitium DNS Server](https:
 
 ## Requirements
 
-- **Only Linux is supported at this time**
+- **Linux, Windows, and macOS are supported**
 - A [Technitium DNS Server](https://technitium.com/dns/) instance with the **Query Logs (SQLite) App** installed
   - Must be configured to use the **in-memory database** option for performance reasons.
 - A Technitium API token with the following permissions:
@@ -38,27 +38,40 @@ A simple terminal-based DNS statistics viewer for [Technitium DNS Server](https:
 
 Download the latest release from the [GitHub Releases](https://github.com/sjclayton/nsstats/releases) page.
 
-### Build from Source
+### Windows Support
 
-```bash
-# Clone the repository
-git clone https://github.com/sjclayton/nsstats.git
-cd nsstats
+`nsstats` is fully supported on Windows.
 
-# Build debug (development) binary
-nimble debug
+- **Config Path:** Stored at `%APPDATA%\nsstats\config.toml` (typically `C:\Users\<user>\AppData\Roaming\nsstats\config.toml`).
+- **HTTPS & Self-Signed Certificates:**
+  - Even if your self-signed certificate is imported into the Windows Certificate Store, Nim's OpenSSL backend may not automatically trust it.
+  - To fix this, you have two options:
+    1. **Recommended (Secure):** Export your **full certificate chain** (the leaf/intermediate certificate AND the root CA certificate) as a single `.pem` file. Then add the path to this `.pem` file in your `config.toml`:
+       ```toml
+       ca_cert = "C:\\path\\to\\your\\full_chain.pem"
+       ```
+    2. **Alternative (Bypass):** Run with the `-k` or `--insecure` flag to skip certificate verification entirely.
 
-# Build release binary
-nimble release
-```
+### Building on Windows
 
-The compiled binary will be at `bin/nsstats`, you can place it in your `$PATH` or copy it
-to another location of your choice for convenience.
+To build `nsstats` on Windows, follow these steps:
 
-**Prerequisites for building:**
+1. **Install Prerequisites (via winget):**
+   Open PowerShell and run:
+   ```powershell
+   winget install nim.nim
+   winget install BrechtSanders.WinLibs.POSIX.UCRT
+   ```
+   *Note: You may need to restart your terminal for `nim` and `gcc` to be recognized.*
 
-- Nim compiler >= 2.2.10
-- nimble package manager
+2. **Install Dependencies & Build:**
+   Navigate to the `nsstats` directory and run:
+   ```powershell
+   nimble install parsetoml -y
+   nimble release
+   ```
+   The resulting binary will be in `bin\nsstats.exe`.
+   *(Use `nimble debug` if you need debug information or are troubleshooting the build process).*
 
 ## Usage
 
